@@ -6,6 +6,9 @@ import * as Tone from 'tone'
 interface WaveformPoint {
   x: number
   y: number
+  time: number
+  isNewLine?: boolean
+  gapDuration?: number  // Duration of gap before this point
 }
 
 interface SavedSound {
@@ -48,6 +51,10 @@ const SynthWavePage = () => {
   const [activeEvents, setActiveEvents] = useState<string[]>([])
   const playheadRef = useRef<number>(0)
   const animationFrameRef = useRef<number>()
+  const [startTime, setStartTime] = useState<number | null>(null)
+  const [lastDrawTime, setLastDrawTime] = useState<number | null>(null)
+  const [lastLineEndTime, setLastLineEndTime] = useState<number | null>(null)
+  const [selectedGap, setSelectedGap] = useState<number | null>(null)
 
   useEffect(() => {
     // Initialize Tone.js with effects chain
@@ -72,19 +79,59 @@ const SynthWavePage = () => {
     const { width, height } = ctx.canvas
     ctx.clearRect(0, 0, width, height)
     
-    ctx.beginPath()
-    ctx.strokeStyle = '#4CAF50'
-    ctx.lineWidth = 2
+    let currentPath: WaveformPoint[] = []
+    
+    points.forEach((point) => {
+      if (point.isNewLine && currentPath.length > 0) {
+        // Draw the current path
+        ctx.beginPath()
+        ctx.strokeStyle = '#4CAF50'
+        ctx.lineWidth = 2
+        
+        currentPath.forEach((p, i) => {
+          if (i === 0) ctx.moveTo(p.x, p.y)
+          else ctx.lineTo(p.x, p.y)
+        })
+        
+        ctx.stroke()
 
-    points.forEach((point, index) => {
-      if (index === 0) {
-        ctx.moveTo(point.x, point.y)
+        // Draw gap indicator if there's a gap
+        if (point.gapDuration) {
+          const lastPoint = currentPath[currentPath.length - 1]
+          const gapWidth = point.gapDuration * 50 // Scale factor for visualization
+          
+          ctx.beginPath()
+          ctx.strokeStyle = selectedGap === points.indexOf(point) ? '#FF4444' : '#888888'
+          ctx.setLineDash([5, 5])
+          ctx.moveTo(lastPoint.x, lastPoint.y)
+          ctx.lineTo(lastPoint.x + gapWidth, lastPoint.y)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          // Draw gap adjustment handle
+          ctx.fillStyle = '#888888'
+          ctx.beginPath()
+          ctx.arc(lastPoint.x + gapWidth, lastPoint.y, 5, 0, Math.PI * 2)
+          ctx.fill()
+        }
+
+        currentPath = [point]
       } else {
-        ctx.lineTo(point.x, point.y)
+        currentPath.push(point)
       }
     })
-
-    ctx.stroke()
+    
+    // Draw the last path
+    if (currentPath.length > 0) {
+      ctx.beginPath()
+      ctx.strokeStyle = '#4CAF50'
+      ctx.lineWidth = 2
+      currentPath.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y)
+        else ctx.lineTo(p.x, p.y)
+      })
+      ctx.stroke()
+    }
   }
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -95,10 +142,29 @@ const SynthWavePage = () => {
     const rect = canvas.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
+    const currentTime = Tone.now()
 
-    setWaveformPoints([{ x, y }])
+    if (!startTime) {
+      setStartTime(currentTime)
+    }
+
+    // Calculate gap duration if this is a new line after a previous one
+    let gapDuration = 0
+    if (lastLineEndTime) {
+      gapDuration = currentTime - lastLineEndTime
+    }
+
+    const newPoint = {
+      x,
+      y,
+      time: currentTime - (startTime || currentTime),
+      isNewLine: true,
+      gapDuration
+    }
+
+    setWaveformPoints(prev => [...prev, newPoint])
+    setLastDrawTime(currentTime)
     
-    // Start synth with current frequency
     if (synth) {
       const frequency = mapToFrequency(y, canvas.height)
       synth.triggerAttack(frequency)
@@ -106,7 +172,7 @@ const SynthWavePage = () => {
   }
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !canvasRef.current || !synth) return
+    if (!isDrawing || !canvasRef.current || !synth || !lastDrawTime) return
 
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
@@ -115,18 +181,32 @@ const SynthWavePage = () => {
     const rect = canvas.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
+    const currentTime = Tone.now()
+    const timeDiff = currentTime - lastDrawTime
 
-    setWaveformPoints(prev => [...prev, { x, y }])
-    drawWaveform(ctx, [...waveformPoints, { x, y }])
+    const newPoint = {
+      x,
+      y,
+      time: currentTime - (startTime || currentTime),
+      isNewLine: timeDiff > 0.1
+    }
 
-    // Update frequency based on Y position
-    const frequency = mapToFrequency(y, canvas.height)
-    synth.frequency.setValueAtTime(frequency, '+0')
+    if (newPoint.isNewLine) {
+      synth.triggerRelease('+0')
+      synth.triggerAttack(mapToFrequency(y, canvas.height))
+    } else {
+      synth.frequency.setValueAtTime(mapToFrequency(y, canvas.height), '+0')
+    }
+
+    setWaveformPoints(prev => [...prev, newPoint])
+    drawWaveform(ctx, [...waveformPoints, newPoint])
+    setLastDrawTime(currentTime)
   }
 
   const stopDrawing = () => {
     setIsDrawing(false)
     synth?.triggerRelease()
+    setLastLineEndTime(Tone.now())
   }
 
   const mapToFrequency = (y: number, height: number) => {
@@ -166,12 +246,36 @@ const SynthWavePage = () => {
   const playSound = async (points: WaveformPoint[], duration = 1, delayStart = 0) => {
     if (!synth) return
 
-    const now = Tone.now() + delayStart // Add delay to start time
+    const now = Tone.now() + delayStart
+    let lastPoint = points[0]
+
     points.forEach((point, index) => {
-      const time = now + (index / points.length) * duration
+      const time = now + point.time
       const frequency = mapToFrequency(point.y, canvasRef.current?.height || 400)
-      synth.triggerAttackRelease(frequency, 0.1, time)
+      
+      if (point.isNewLine) {
+        // If there's a gap duration, schedule the release and new attack
+        if (point.gapDuration && point.gapDuration > 0) {
+          // Release at the start of the gap
+          const gapStartTime = time - point.gapDuration
+          synth.triggerRelease(gapStartTime)
+          // Start new note after the gap
+          synth.triggerAttack(frequency, time)
+        } else {
+          // No gap, just start new note
+          synth.triggerAttack(frequency, time)
+        }
+      } else {
+        // Continue the current note with new frequency
+        synth.frequency.setValueAtTime(frequency, time)
+      }
+      
+      lastPoint = point
     })
+
+    // Final release
+    const finalTime = now + lastPoint.time + 0.05
+    synth.triggerRelease(finalTime)
   }
 
   const playSavedSound = (soundId: number) => {
@@ -264,6 +368,16 @@ const SynthWavePage = () => {
     setDraggingEvent(null)
   }
 
+  const clearDrawing = () => {
+    setWaveformPoints([])
+    setStartTime(null)
+    setLastDrawTime(null)
+    const ctx = canvasRef.current?.getContext('2d')
+    if (ctx) {
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+    }
+  }
+
   // Clean up animation frame on unmount
   useEffect(() => {
     return () => {
@@ -272,6 +386,59 @@ const SynthWavePage = () => {
       }
     }
   }, [])
+
+  // Add gap adjustment functionality
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const rect = canvas.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    // Check if we clicked near a gap handle
+    const gapPoint = waveformPoints.findIndex((point, index) => {
+      if (!point.gapDuration) return false
+      const prevPoint = waveformPoints[index - 1]
+      if (!prevPoint) return false
+
+      const handleX = prevPoint.x + (point.gapDuration * 50)
+      const handleY = prevPoint.y
+      
+      return Math.abs(x - handleX) < 10 && Math.abs(y - handleY) < 10
+    })
+
+    setSelectedGap(gapPoint >= 0 ? gapPoint : null)
+  }
+
+  const handleGapAdjustment = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (selectedGap === null || !isDrawing) return
+
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const rect = canvas.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    
+    // Update gap duration based on drag distance
+    setWaveformPoints(prev => {
+      const newPoints = [...prev]
+      const point = newPoints[selectedGap]
+      if (point) {
+        const prevPoint = newPoints[selectedGap - 1]
+        if (prevPoint) {
+          const newGapDuration = Math.max(0, (x - prevPoint.x) / 50)
+          point.gapDuration = newGapDuration
+        }
+      }
+      return newPoints
+    })
+
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      drawWaveform(ctx, waveformPoints)
+    }
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -320,10 +487,23 @@ const SynthWavePage = () => {
         <canvas
           ref={canvasRef}
           className="w-full h-full border border-gray-700 rounded cursor-crosshair"
-          onMouseDown={startDrawing}
+          onMouseDown={(e) => {
+            if (selectedGap !== null) {
+              setIsDrawing(true)
+            } else {
+              startDrawing(e)
+            }
+          }}
+          onClick={handleCanvasClick}
+          onMouseMove={(e) => {
+            if (selectedGap !== null) {
+              handleGapAdjustment(e)
+            } else {
+              draw(e)
+            }
+          }}
           onMouseUp={stopDrawing}
           onMouseOut={stopDrawing}
-          onMouseMove={draw}
           width={800}
           height={400}
         />
@@ -344,6 +524,12 @@ const SynthWavePage = () => {
           className="px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50"
         >
           Save Sound
+        </button>
+        <button
+          onClick={clearDrawing}
+          className="px-4 py-2 bg-red-500 text-white rounded"
+        >
+          Clear Drawing
         </button>
       </div>
 

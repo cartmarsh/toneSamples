@@ -30,6 +30,19 @@ interface TimelineEvent {
   track: number
 }
 
+interface EditingState {
+  isEditMode: boolean
+  hoveredSegment: LineSegment | null
+  selectedSegment: LineSegment | null
+  tooltipPosition: { x: number; y: number } | null
+}
+
+interface LineSegment {
+  startIndex: number
+  endIndex: number
+  points: WaveformPoint[]
+}
+
 const SynthWavePage = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [synth, setSynth] = useState<Tone.Synth | null>(null)
@@ -55,6 +68,12 @@ const SynthWavePage = () => {
   const [lastDrawTime, setLastDrawTime] = useState<number | null>(null)
   const [lastLineEndTime, setLastLineEndTime] = useState<number | null>(null)
   const [selectedGap, setSelectedGap] = useState<number | null>(null)
+  const [editingState, setEditingState] = useState<EditingState>({
+    isEditMode: false,
+    hoveredSegment: null,
+    selectedSegment: null,
+    tooltipPosition: null
+  })
 
   useEffect(() => {
     // Initialize Tone.js with effects chain
@@ -75,62 +94,259 @@ const SynthWavePage = () => {
     }
   }, [selectedWaveform, effects])
 
-  const drawWaveform = (ctx: CanvasRenderingContext2D, points: WaveformPoint[]) => {
-    const { width, height } = ctx.canvas
-    ctx.clearRect(0, 0, width, height)
+  const drawWaveform = (ctx: CanvasRenderingContext2D, points: WaveformPoint[], hoveredSegment: LineSegment | null = null) => {
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
     
-    let currentPath: WaveformPoint[] = []
+    let currentLine: WaveformPoint[] = []
     
-    points.forEach((point) => {
-      if (point.isNewLine && currentPath.length > 0) {
-        // Draw the current path
-        ctx.beginPath()
-        ctx.strokeStyle = '#4CAF50'
-        ctx.lineWidth = 2
-        
-        currentPath.forEach((p, i) => {
-          if (i === 0) ctx.moveTo(p.x, p.y)
-          else ctx.lineTo(p.x, p.y)
-        })
-        
-        ctx.stroke()
-
-        // Draw gap indicator if there's a gap
-        if (point.gapDuration) {
-          const lastPoint = currentPath[currentPath.length - 1]
-          const gapWidth = point.gapDuration * 50 // Scale factor for visualization
+    points.forEach((point, index) => {
+      if (point.isNewLine || index === 0) {
+        if (currentLine.length > 0) {
+          const isHovered = hoveredSegment && 
+            index > hoveredSegment.startIndex && 
+            index <= hoveredSegment.endIndex + 1
           
-          ctx.beginPath()
-          ctx.strokeStyle = selectedGap === points.indexOf(point) ? '#FF4444' : '#888888'
-          ctx.setLineDash([5, 5])
-          ctx.moveTo(lastPoint.x, lastPoint.y)
-          ctx.lineTo(lastPoint.x + gapWidth, lastPoint.y)
-          ctx.stroke()
-          ctx.setLineDash([])
-
-          // Draw gap adjustment handle
-          ctx.fillStyle = '#888888'
-          ctx.beginPath()
-          ctx.arc(lastPoint.x + gapWidth, lastPoint.y, 5, 0, Math.PI * 2)
-          ctx.fill()
+          drawLine(ctx, currentLine, isHovered)
         }
-
-        currentPath = [point]
+        currentLine = [point]
       } else {
-        currentPath.push(point)
+        currentLine.push(point)
       }
     })
     
-    // Draw the last path
-    if (currentPath.length > 0) {
-      ctx.beginPath()
-      ctx.strokeStyle = '#4CAF50'
-      ctx.lineWidth = 2
-      currentPath.forEach((p, i) => {
-        if (i === 0) ctx.moveTo(p.x, p.y)
-        else ctx.lineTo(p.x, p.y)
-      })
-      ctx.stroke()
+    if (currentLine.length > 0) {
+      const isHovered = hoveredSegment && 
+        hoveredSegment.endIndex === points.length - 1
+      drawLine(ctx, currentLine, isHovered)
+    }
+  }
+
+  const drawLine = (ctx: CanvasRenderingContext2D, points: WaveformPoint[], isHovered: boolean) => {
+    ctx.beginPath()
+    ctx.moveTo(points[0].x, points[0].y)
+    
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y)
+    }
+    
+    ctx.lineWidth = isHovered ? 3 : 2
+    ctx.strokeStyle = isHovered ? '#4CAF50' : '#2196F3'
+    ctx.stroke()
+  }
+
+  const findLineSegment = (x: number, y: number): LineSegment | null => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+
+    // Get the display and actual canvas dimensions
+    const rect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    
+    // Scale the input coordinates
+    const scaledX = x * scaleX
+    const scaledY = y * scaleY
+
+    let currentSegment: WaveformPoint[] = []
+    let startIndex = 0
+
+    for (let i = 0; i < waveformPoints.length; i++) {
+      const point = waveformPoints[i]
+      
+      if (point.isNewLine && currentSegment.length > 0) {
+        if (isClickNearLine(scaledX, scaledY, currentSegment)) {
+          return {
+            startIndex,
+            endIndex: i - 1,
+            points: currentSegment
+          }
+        }
+        currentSegment = [point]
+        startIndex = i
+      } else {
+        currentSegment.push(point)
+      }
+    }
+
+    // Check last segment
+    if (currentSegment.length > 0 && isClickNearLine(scaledX, scaledY, currentSegment)) {
+      return {
+        startIndex,
+        endIndex: waveformPoints.length - 1,
+        points: currentSegment
+      }
+    }
+
+    return null
+  }
+
+  const isClickNearLine = (x: number, y: number, points: WaveformPoint[]): boolean => {
+    for (let i = 1; i < points.length; i++) {
+      const p1 = points[i - 1]
+      const p2 = points[i]
+      const distance = distanceToLineSegment(x, y, p1.x, p1.y, p2.x, p2.y)
+      if (distance < 15) return true
+    }
+    return false
+  }
+
+  const distanceToLineSegment = (x: number, y: number, x1: number, y1: number, x2: number, y2: number): number => {
+    const A = x - x1
+    const B = y - y1
+    const C = x2 - x1
+    const D = y2 - y1
+
+    const dot = A * C + B * D
+    const lenSq = C * C + D * D
+    let param = -1
+
+    if (lenSq !== 0) param = dot / lenSq
+
+    let xx, yy
+
+    if (param < 0) {
+      xx = x1
+      yy = y1
+    } else if (param > 1) {
+      xx = x2
+      yy = y2
+    } else {
+      xx = x1 + param * C
+      yy = y1 + param * D
+    }
+
+    const dx = x - xx
+    const dy = y - yy
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!editingState.isEditMode || isDrawing) return
+
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const rect = canvas.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    const segment = findLineSegment(x, y)
+    
+    if (segment) {
+      setEditingState(prev => ({
+        ...prev,
+        hoveredSegment: segment
+      }))
+      
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        drawWaveform(ctx, waveformPoints, segment)
+      }
+    } else if (editingState.hoveredSegment) {
+      setEditingState(prev => ({
+        ...prev,
+        hoveredSegment: null
+      }))
+      
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        drawWaveform(ctx, waveformPoints)
+      }
+    }
+  }
+
+  const handleLineClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!editingState.isEditMode || isDrawing) return
+
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const rect = canvas.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    const segment = findLineSegment(x, y)
+    if (segment) {
+      setEditingState(prev => ({
+        ...prev,
+        selectedSegment: segment,
+        tooltipPosition: { x: e.clientX, y: e.clientY }
+      }))
+    }
+  }
+
+  const smoothLine = (points: WaveformPoint[]): WaveformPoint[] => {
+    return points.map((point, i) => {
+      if (i === 0 || i === points.length - 1) return point
+      
+      const prev = points[i - 1]
+      const next = points[i + 1]
+      
+      return {
+        ...point,
+        x: point.x,  // Keep x the same to maintain timing
+        y: (prev.y + point.y + next.y) / 3
+      }
+    })
+  }
+
+  const stretchLine = (points: WaveformPoint[], factor: number): WaveformPoint[] => {
+    const centerY = points.reduce((sum, p) => sum + p.y, 0) / points.length
+    
+    return points.map(point => ({
+      ...point,
+      y: centerY + (point.y - centerY) * factor
+    }))
+  }
+
+  const applyArpeggio = (points: WaveformPoint[]): WaveformPoint[] => {
+    const baseY = points[0].y
+    return points.map((point, i) => ({
+      ...point,
+      y: baseY + (i % 2 === 0 ? 30 : -30)
+    }))
+  }
+
+  const applyEffect = (effect: 'smooth' | 'stretch' | 'arpeggio') => {
+    if (!editingState.selectedSegment) return
+
+    const { startIndex, endIndex } = editingState.selectedSegment
+    const newPoints = [...waveformPoints]
+    const segmentPoints = newPoints.slice(startIndex, endIndex + 1)
+    
+    let modifiedPoints: WaveformPoint[]
+    switch (effect) {
+      case 'smooth':
+        modifiedPoints = smoothLine(segmentPoints)
+        break
+      case 'stretch':
+        modifiedPoints = stretchLine(segmentPoints, 1.5)
+        break
+      case 'arpeggio':
+        modifiedPoints = applyArpeggio(segmentPoints)
+        break
+    }
+    
+    newPoints.splice(startIndex, endIndex - startIndex + 1, ...modifiedPoints)
+    setWaveformPoints(newPoints)
+    
+    const ctx = canvasRef.current?.getContext('2d')
+    if (ctx) {
+      drawWaveform(ctx, newPoints, editingState.hoveredSegment)
+    }
+  }
+
+  const getScaledCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+
+    const rect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
     }
   }
 
@@ -139,9 +355,9 @@ const SynthWavePage = () => {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const rect = canvas.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
+    const coords = getScaledCoordinates(e)
+    if (!coords) return
+
     const currentTime = Tone.now()
 
     if (!startTime) {
@@ -155,8 +371,8 @@ const SynthWavePage = () => {
     }
 
     const newPoint = {
-      x,
-      y,
+      x: coords.x,
+      y: coords.y,
       time: currentTime - (startTime || currentTime),
       isNewLine: true,
       gapDuration
@@ -166,7 +382,7 @@ const SynthWavePage = () => {
     setLastDrawTime(currentTime)
     
     if (synth) {
-      const frequency = mapToFrequency(y, canvas.height)
+      const frequency = mapToFrequency(coords.y, canvas.height)
       synth.triggerAttack(frequency)
     }
   }
@@ -178,24 +394,24 @@ const SynthWavePage = () => {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const rect = canvas.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
+    const coords = getScaledCoordinates(e)
+    if (!coords) return
+
     const currentTime = Tone.now()
     const timeDiff = currentTime - lastDrawTime
 
     const newPoint = {
-      x,
-      y,
+      x: coords.x,
+      y: coords.y,
       time: currentTime - (startTime || currentTime),
       isNewLine: timeDiff > 0.1
     }
 
     if (newPoint.isNewLine) {
       synth.triggerRelease('+0')
-      synth.triggerAttack(mapToFrequency(y, canvas.height))
+      synth.triggerAttack(mapToFrequency(coords.y, canvas.height))
     } else {
-      synth.frequency.setValueAtTime(mapToFrequency(y, canvas.height), '+0')
+      synth.frequency.setValueAtTime(mapToFrequency(coords.y, canvas.height), '+0')
     }
 
     setWaveformPoints(prev => [...prev, newPoint])
@@ -440,6 +656,14 @@ const SynthWavePage = () => {
     }
   }
 
+  const playCurrentDrawing = () => {
+    if (waveformPoints.length === 0) return
+    
+    // Calculate total duration from the last point's time
+    const duration = waveformPoints[waveformPoints.length - 1].time
+    playSound(waveformPoints)
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex space-x-4 mb-4">
@@ -486,10 +710,14 @@ const SynthWavePage = () => {
       <div className="w-full h-[400px] bg-gray-900 rounded-lg">
         <canvas
           ref={canvasRef}
-          className="w-full h-full border border-gray-700 rounded cursor-crosshair"
+          className={`w-full h-full border border-gray-700 rounded ${
+            editingState.isEditMode ? 'cursor-pointer' : 'cursor-crosshair'
+          }`}
           onMouseDown={(e) => {
             if (selectedGap !== null) {
               setIsDrawing(true)
+            } else if (editingState.isEditMode) {
+              handleLineClick(e)
             } else {
               startDrawing(e)
             }
@@ -498,6 +726,8 @@ const SynthWavePage = () => {
           onMouseMove={(e) => {
             if (selectedGap !== null) {
               handleGapAdjustment(e)
+            } else if (editingState.isEditMode) {
+              handleCanvasMouseMove(e)
             } else {
               draw(e)
             }
@@ -507,6 +737,38 @@ const SynthWavePage = () => {
           width={800}
           height={400}
         />
+        
+        {/* Tooltip for line editing */}
+        {editingState.tooltipPosition && editingState.selectedSegment && (
+          <div
+            className="absolute bg-white border border-gray-200 rounded shadow-lg p-2 z-10"
+            style={{
+              left: editingState.tooltipPosition.x + 10,
+              top: editingState.tooltipPosition.y + 10
+            }}
+          >
+            <div className="flex flex-col space-y-2">
+              <button
+                onClick={() => applyEffect('smooth')}
+                className="px-3 py-1 bg-blue-100 hover:bg-blue-200 rounded"
+              >
+                Smooth
+              </button>
+              <button
+                onClick={() => applyEffect('stretch')}
+                className="px-3 py-1 bg-blue-100 hover:bg-blue-200 rounded"
+              >
+                Stretch
+              </button>
+              <button
+                onClick={() => applyEffect('arpeggio')}
+                className="px-3 py-1 bg-blue-100 hover:bg-blue-200 rounded"
+              >
+                Arpeggio
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Save Sound Controls */}
@@ -524,6 +786,19 @@ const SynthWavePage = () => {
           className="px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50"
         >
           Save Sound
+        </button>
+        <button
+          onClick={() => setEditingState(prev => ({ ...prev, isEditMode: !prev.isEditMode }))}
+          className={`px-4 py-2 ${editingState.isEditMode ? 'bg-green-500' : 'bg-gray-500'} text-white rounded`}
+        >
+          {editingState.isEditMode ? 'Drawing Mode' : 'Edit Mode'}
+        </button>
+        <button
+          onClick={playCurrentDrawing}
+          disabled={waveformPoints.length === 0 || isPlaying}
+          className="px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
+        >
+          Play Drawing
         </button>
         <button
           onClick={clearDrawing}

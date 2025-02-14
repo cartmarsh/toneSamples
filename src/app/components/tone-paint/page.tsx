@@ -9,6 +9,8 @@ const TonePaint = () => {
   const [brushSize, setBrushSize] = useState<number>(10);
   const [brushColor, setBrushColor] = useState<string>("#ff0000");
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
+  const [prevPosition, setPrevPosition] = useState<{ x: number; y: number } | null>(null);
+  const [lastTime, setLastTime] = useState<number | null>(null);
 
   // Initialize Tone.js synth and effects
   const synth = new Tone.Synth().toDestination();
@@ -29,6 +31,8 @@ const TonePaint = () => {
     const stopDrawing = () => {
       setIsDrawing(false);
       context?.beginPath();
+      setPrevPosition(null); // Reset previous position
+      setLastTime(null); // Reset last time
     };
 
     const draw = (e: MouseEvent) => {
@@ -37,6 +41,32 @@ const TonePaint = () => {
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
+
+      // Calculate speed and acceleration
+      if (prevPosition) {
+        const dx = x - prevPosition.x;
+        const dy = y - prevPosition.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const currentTime = performance.now();
+        const timeDiff = lastTime ? currentTime - lastTime : 1; // Avoid division by zero
+        const speed = distance / timeDiff; // Pixels per millisecond
+
+        // Use speed to modify the envelope
+        const envelope = Math.min(speed * 10, 1); // Scale speed to a usable envelope value
+
+        // Map drawing to sound
+        const pitch = (y / canvas.height) * 48 + 48; // Map y to MIDI note (48 = C3)
+        const pan = (x / canvas.width) * 2 - 1; // Map x to stereo pan (-1 to 1)
+        const volume = brushSize / 50; // Map brush size to volume
+
+        // Trigger sound with envelope
+        synth.triggerAttack(Tone.Midi(pitch).toFrequency(), Tone.now(), envelope);
+        synth.triggerRelease(Tone.now() + 0.1); // Release after a short duration
+
+        // Update previous position and time
+        setPrevPosition({ x, y });
+        setLastTime(performance.now());
+      }
 
       // Draw on the canvas
       context.lineWidth = brushSize;
@@ -66,7 +96,7 @@ const TonePaint = () => {
       canvas.removeEventListener("mouseup", stopDrawing);
       canvas.removeEventListener("mousemove", draw);
     };
-  }, [isDrawing, brushSize, brushColor]);
+  }, [isDrawing, brushSize, brushColor, prevPosition, lastTime]);
 
   // Clear the canvas
   const clearCanvas = () => {

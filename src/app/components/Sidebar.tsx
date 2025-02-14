@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link'
+import SynthWave from './synth-wave/page'
 
 const navigationLinks = [
   { href: '/', label: 'Home' },
@@ -9,6 +10,7 @@ const navigationLinks = [
   { href: '/components/sequencer', label: 'Step Sequencer' },
   { href: '/components/hand-sound', label: 'Hand Sound' },
   { href: '/components/tone-paint', label: 'Tone Paint' },
+  { href: '/components/synth-wave', label: 'Synth Wave' },
   // Add more routes as needed
 ]
 

@@ -98,6 +98,7 @@ const SynthWavePage = () => {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
     
     let currentLine: WaveformPoint[] = []
+    let gapHandles: { x: number; y: number; isSelected: boolean; pointIndex: number }[] = []
     
     points.forEach((point, index) => {
       if (point.isNewLine || index === 0) {
@@ -107,6 +108,17 @@ const SynthWavePage = () => {
             index <= hoveredSegment.endIndex + 1
           
           drawLine(ctx, currentLine, isHovered)
+          
+          // Store gap handle info for later drawing
+          const lastPoint = currentLine[currentLine.length - 1]
+          if (lastPoint.gapDuration) {
+            gapHandles.push({
+              x: lastPoint.x + (lastPoint.gapDuration * 50),
+              y: lastPoint.y,
+              isSelected: selectedGap === index - 1,
+              pointIndex: index - 1
+            })
+          }
         }
         currentLine = [point]
       } else {
@@ -118,10 +130,33 @@ const SynthWavePage = () => {
       const isHovered = hoveredSegment && 
         hoveredSegment.endIndex === points.length - 1
       drawLine(ctx, currentLine, isHovered)
+      
+      // Store last gap handle if needed
+      const lastPoint = currentLine[currentLine.length - 1]
+      if (lastPoint.gapDuration) {
+        gapHandles.push({
+          x: lastPoint.x + (lastPoint.gapDuration * 50),
+          y: lastPoint.y,
+          isSelected: selectedGap === points.length - 1,
+          pointIndex: points.length - 1
+        })
+      }
     }
+
+    // Draw all gap handles last, so they're always on top
+    gapHandles.forEach(handle => {
+      ctx.beginPath()
+      ctx.arc(handle.x, handle.y, 6, 0, Math.PI * 2)
+      ctx.fillStyle = handle.isSelected ? '#4CAF50' : '#888888'
+      ctx.fill()
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 2
+      ctx.stroke()
+    })
   }
 
   const drawLine = (ctx: CanvasRenderingContext2D, points: WaveformPoint[], isHovered: boolean) => {
+    // Draw the main line
     ctx.beginPath()
     ctx.moveTo(points[0].x, points[0].y)
     
@@ -132,6 +167,27 @@ const SynthWavePage = () => {
     ctx.lineWidth = isHovered ? 3 : 2
     ctx.strokeStyle = isHovered ? '#4CAF50' : '#2196F3'
     ctx.stroke()
+
+    // Draw gap indicator if this is the end of a line
+    const lastPoint = points[points.length - 1]
+    if (lastPoint.gapDuration) {
+      const gapWidth = lastPoint.gapDuration * 50
+      
+      // Draw gap indicator (dotted line)
+      ctx.beginPath()
+      ctx.setLineDash([5, 5])
+      ctx.moveTo(lastPoint.x, lastPoint.y)
+      ctx.lineTo(lastPoint.x + gapWidth, lastPoint.y)
+      ctx.strokeStyle = '#888888'
+      ctx.lineWidth = 1
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      // Draw gap duration text
+      ctx.font = '12px Arial'
+      ctx.fillStyle = '#888888'
+      ctx.fillText(`${lastPoint.gapDuration.toFixed(2)}s`, lastPoint.x + 5, lastPoint.y - 10)
+    }
   }
 
   const findLineSegment = (x: number, y: number): LineSegment | null => {
@@ -463,33 +519,44 @@ const SynthWavePage = () => {
     if (!synth) return
 
     const now = Tone.now() + delayStart
-    let lastPoint = points[0]
+    let currentLineStartIndex = 0
 
     points.forEach((point, index) => {
       const time = now + point.time
       const frequency = mapToFrequency(point.y, canvasRef.current?.height || 400)
       
       if (point.isNewLine) {
-        // If there's a gap duration, schedule the release and new attack
-        if (point.gapDuration && point.gapDuration > 0) {
-          // Release at the start of the gap
-          const gapStartTime = time - point.gapDuration
-          synth.triggerRelease(gapStartTime)
-          // Start new note after the gap
-          synth.triggerAttack(frequency, time)
-        } else {
-          // No gap, just start new note
-          synth.triggerAttack(frequency, time)
+        // Release the previous line's sound
+        if (index > 0) {
+          const prevPoint = points[index - 1]
+          if (prevPoint.gapDuration && prevPoint.gapDuration > 0) {
+            // Release at the exact end of the line
+            synth.triggerRelease(time - prevPoint.gapDuration)
+          }
         }
+        
+        // Start new note after any gap
+        synth.triggerAttack(frequency, time)
+        currentLineStartIndex = index
       } else {
         // Continue the current note with new frequency
         synth.frequency.setValueAtTime(frequency, time)
       }
-      
-      lastPoint = point
+
+      // If this is the last point or the next point starts a new line,
+      // schedule the release for this line
+      if (index === points.length - 1 || 
+          (index + 1 < points.length && points[index + 1].isNewLine)) {
+        const nextPoint = points[index + 1]
+        if (nextPoint && nextPoint.gapDuration) {
+          // Release at the start of the gap
+          synth.triggerRelease(time)
+        }
+      }
     })
 
-    // Final release
+    // Ensure final release
+    const lastPoint = points[points.length - 1]
     const finalTime = now + lastPoint.time + 0.05
     synth.triggerRelease(finalTime)
   }
@@ -603,56 +670,69 @@ const SynthWavePage = () => {
     }
   }, [])
 
-  // Add gap adjustment functionality
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (editingState.isEditMode) {
+      const coords = getScaledCoordinates(e)
+      if (!coords) return
 
-    const rect = canvas.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
+      // In edit mode, check if clicking a gap handle first
+      const gapPoint = waveformPoints.findIndex((point) => {
+        if (!point.gapDuration) return false
+        
+        const handleX = point.x + (point.gapDuration * 50)
+        const handleY = point.y
+        
+        const distance = Math.sqrt(
+          Math.pow(coords.x - handleX, 2) + 
+          Math.pow(coords.y - handleY, 2)
+        )
+        return distance < 10
+      })
 
-    // Check if we clicked near a gap handle
-    const gapPoint = waveformPoints.findIndex((point, index) => {
-      if (!point.gapDuration) return false
-      const prevPoint = waveformPoints[index - 1]
-      if (!prevPoint) return false
+      if (gapPoint >= 0) {
+        setSelectedGap(gapPoint)
+        setIsDrawing(true)
+        e.stopPropagation()
+        e.preventDefault()
+        return
+      }
 
-      const handleX = prevPoint.x + (point.gapDuration * 50)
-      const handleY = prevPoint.y
-      
-      return Math.abs(x - handleX) < 10 && Math.abs(y - handleY) < 10
-    })
-
-    setSelectedGap(gapPoint >= 0 ? gapPoint : null)
+      // If not clicking a gap handle, handle normal line segment selection
+      const segment = findLineSegment(coords.x, coords.y)
+      if (segment) {
+        setEditingState(prev => ({
+          ...prev,
+          selectedSegment: segment
+        }))
+      }
+    } else {
+      // Not in edit mode, just start drawing
+      startDrawing(e)
+    }
   }
 
   const handleGapAdjustment = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (selectedGap === null || !isDrawing) return
+    if (!editingState.isEditMode || selectedGap === null || !isDrawing) return
 
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const rect = canvas.getBoundingClientRect()
-    const x = e.clientX - rect.left
+    const coords = getScaledCoordinates(e)
+    if (!coords) return
     
     // Update gap duration based on drag distance
     setWaveformPoints(prev => {
       const newPoints = [...prev]
       const point = newPoints[selectedGap]
       if (point) {
-        const prevPoint = newPoints[selectedGap - 1]
-        if (prevPoint) {
-          const newGapDuration = Math.max(0, (x - prevPoint.x) / 50)
-          point.gapDuration = newGapDuration
-        }
+        const startX = point.x
+        const dragDistance = Math.max(0, coords.x - startX)
+        const newGapDuration = dragDistance / 50
+        point.gapDuration = newGapDuration
       }
       return newPoints
     })
 
-    const ctx = canvas.getContext('2d')
+    const ctx = canvasRef.current?.getContext('2d')
     if (ctx) {
-      drawWaveform(ctx, waveformPoints)
+      drawWaveform(ctx, waveformPoints, editingState.hoveredSegment)
     }
   }
 
@@ -662,6 +742,25 @@ const SynthWavePage = () => {
     // Calculate total duration from the last point's time
     const duration = waveformPoints[waveformPoints.length - 1].time
     playSound(waveformPoints)
+  }
+
+  const handleGapDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editingState.selectedSegment) return
+    
+    const newGapDuration = parseFloat(e.target.value)
+    const newPoints = [...waveformPoints]
+    const lastPointIndex = editingState.selectedSegment.endIndex
+    
+    newPoints[lastPointIndex] = {
+      ...newPoints[lastPointIndex],
+      gapDuration: newGapDuration
+    }
+    
+    setWaveformPoints(newPoints)
+    const ctx = canvasRef.current?.getContext('2d')
+    if (ctx) {
+      drawWaveform(ctx, newPoints, editingState.hoveredSegment)
+    }
   }
 
   return (
@@ -710,65 +809,34 @@ const SynthWavePage = () => {
       <div className="w-full h-[400px] bg-gray-900 rounded-lg">
         <canvas
           ref={canvasRef}
+          width={800}
+          height={400}
           className={`w-full h-full border border-gray-700 rounded ${
             editingState.isEditMode ? 'cursor-pointer' : 'cursor-crosshair'
           }`}
-          onMouseDown={(e) => {
-            if (selectedGap !== null) {
-              setIsDrawing(true)
-            } else if (editingState.isEditMode) {
-              handleLineClick(e)
-            } else {
-              startDrawing(e)
-            }
-          }}
-          onClick={handleCanvasClick}
+          onMouseDown={handleMouseDown}
           onMouseMove={(e) => {
-            if (selectedGap !== null) {
-              handleGapAdjustment(e)
-            } else if (editingState.isEditMode) {
-              handleCanvasMouseMove(e)
-            } else {
+            if (editingState.isEditMode) {
+              if (selectedGap !== null && isDrawing) {
+                handleGapAdjustment(e)
+              } else {
+                handleCanvasMouseMove(e)
+              }
+            } else if (isDrawing) {
               draw(e)
             }
           }}
-          onMouseUp={stopDrawing}
-          onMouseOut={stopDrawing}
-          width={800}
-          height={400}
+          onMouseUp={() => {
+            setIsDrawing(false)
+            setSelectedGap(null)
+            stopDrawing()
+          }}
+          onMouseLeave={() => {
+            setIsDrawing(false)
+            setSelectedGap(null)
+            stopDrawing()
+          }}
         />
-        
-        {/* Tooltip for line editing */}
-        {editingState.tooltipPosition && editingState.selectedSegment && (
-          <div
-            className="absolute bg-white border border-gray-200 rounded shadow-lg p-2 z-10"
-            style={{
-              left: editingState.tooltipPosition.x + 10,
-              top: editingState.tooltipPosition.y + 10
-            }}
-          >
-            <div className="flex flex-col space-y-2">
-              <button
-                onClick={() => applyEffect('smooth')}
-                className="px-3 py-1 bg-blue-100 hover:bg-blue-200 rounded"
-              >
-                Smooth
-              </button>
-              <button
-                onClick={() => applyEffect('stretch')}
-                className="px-3 py-1 bg-blue-100 hover:bg-blue-200 rounded"
-              >
-                Stretch
-              </button>
-              <button
-                onClick={() => applyEffect('arpeggio')}
-                className="px-3 py-1 bg-blue-100 hover:bg-blue-200 rounded"
-              >
-                Arpeggio
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Save Sound Controls */}
@@ -938,4 +1006,4 @@ const SynthWavePage = () => {
   )
 }
 
-export default SynthWavePage 
+export default SynthWavePage

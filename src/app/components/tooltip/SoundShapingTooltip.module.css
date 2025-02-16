@@ -1,0 +1,88 @@
+.soundShapingTooltip {
+  width: 300px;
+}
+
+.section {
+  margin-bottom: 16px;
+}
+
+.section h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.section select,
+.section input[type="range"],
+.section input[type="number"] {
+  width: 100%;
+  margin: 4px 0;
+}
+
+.rangeInputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rangeInputs input[type="number"] {
+  width: 80px;
+}
+
+.adsrControls,
+.vibratoControls {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.vibratoControls {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.adsrControls > div,
+.vibratoControls > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.adsrControls label,
+.vibratoControls label {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+/* Custom styling for range inputs */
+.rangeInput {
+  -webkit-appearance: none;
+  height: 4px;
+  background: #ddd;
+  border-radius: 2px;
+  outline: none;
+}
+
+.rangeInput::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #4a90e2;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+/* Custom styling for select */
+.selectInput {
+  padding: 6px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  background-color: white;
+}
+
+/* Custom styling for number inputs */
+.numberInput {
+  padding: 6px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+}

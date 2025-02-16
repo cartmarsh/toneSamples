@@ -2,6 +2,9 @@
 
 import React, { useRef, useEffect, useState } from 'react'
 import * as Tone from 'tone'
+import Tooltip from '../tooltip/Tooltip'
+import SoundShapingTooltip from '../tooltip/SoundShapingTooltip'
+import WaveConfigPanel from './WaveConfigPanel'
 
 interface WaveformPoint {
   x: number
@@ -11,11 +14,14 @@ interface WaveformPoint {
   gapDuration?: number  // Duration of gap before this point
 }
 
+type WaveformType = 'sine' | 'square' | 'sawtooth' | 'triangle' | 'custom'
+type EffectType = 'reverb' | 'distortion'
+
 interface SavedSound {
   id: number
   name: string
   points: WaveformPoint[]
-  waveform: 'sine' | 'square' | 'sawtooth' | 'triangle' | 'custom'
+  waveform: WaveformType
   effects: {
     reverb: number
     distortion: number
@@ -35,6 +41,13 @@ interface EditingState {
   hoveredSegment: LineSegment | null
   selectedSegment: LineSegment | null
   tooltipPosition: { x: number; y: number } | null
+  selectedLineSettings: {
+    waveform: Exclude<WaveformType, 'custom'>
+    volume: number
+    frequencyRange: { min: number; max: number }
+    adsr: { attack: number; decay: number; sustain: number; release: number }
+    vibrato: { rate: number; depth: number }
+  } | null
 }
 
 interface LineSegment {
@@ -48,7 +61,7 @@ const SynthWavePage = () => {
   const [synth, setSynth] = useState<Tone.Synth | null>(null)
   const [waveformPoints, setWaveformPoints] = useState<WaveformPoint[]>([])
   const [isDrawing, setIsDrawing] = useState(false)
-  const [selectedWaveform, setSelectedWaveform] = useState<'sine' | 'square' | 'sawtooth' | 'triangle' | 'custom'>('sine')
+  const [selectedWaveform, setSelectedWaveform] = useState<WaveformType>('sine')
   const [effects, setEffects] = useState({
     reverb: 0,
     distortion: 0
@@ -72,7 +85,15 @@ const SynthWavePage = () => {
     isEditMode: false,
     hoveredSegment: null,
     selectedSegment: null,
-    tooltipPosition: null
+    tooltipPosition: null,
+    selectedLineSettings: null
+  })
+  const [drawingConfig, setDrawingConfig] = useState({
+    tempo: 120,
+    gridSize: 16,
+    snapToGrid: true,
+    autoConnect: true,
+    loopMode: false
   })
 
   useEffect(() => {
@@ -326,9 +347,36 @@ const SynthWavePage = () => {
       setEditingState(prev => ({
         ...prev,
         selectedSegment: segment,
-        tooltipPosition: { x: e.clientX, y: e.clientY }
+        tooltipPosition: { x: e.clientX, y: e.clientY },
+        selectedLineSettings: {
+          waveform: selectedWaveform === 'custom' ? 'sine' : selectedWaveform,
+          volume: 0.5,
+          frequencyRange: { min: 20, max: 2000 },
+          adsr: { attack: 0.1, decay: 0.2, sustain: 0.5, release: 0.5 },
+          vibrato: { rate: 5, depth: 0.1 }
+        }
       }))
     }
+  }
+
+  const handleTooltipClose = () => {
+    setEditingState(prev => ({
+      ...prev,
+      selectedSegment: null,
+      tooltipPosition: null,
+      selectedLineSettings: null
+    }))
+  }
+
+  const updateLineSettings = (newSettings: any) => {
+    setEditingState(prev => ({
+      ...prev,
+      selectedLineSettings: {
+        ...prev.selectedLineSettings,
+        ...newSettings
+      }
+    }))
+    // Here you would also update the actual line properties in your data structure
   }
 
   const smoothLine = (points: WaveformPoint[]): WaveformPoint[] => {
@@ -485,14 +533,14 @@ const SynthWavePage = () => {
     return 880 - (y / height) * (880 - 110)
   }
 
-  const handleWaveformChange = (type: 'sine' | 'square' | 'sawtooth' | 'triangle' | 'custom') => {
+  const handleWaveformChange = (type: WaveformType) => {
     setSelectedWaveform(type)
     if (synth) {
       synth.oscillator.type = type === 'custom' ? 'sine' : type
     }
   }
 
-  const handleEffectChange = (effect: 'reverb' | 'distortion', value: number) => {
+  const handleEffectChange = (effect: EffectType, value: number) => {
     setEffects(prev => ({ ...prev, [effect]: value }))
   }
 
@@ -764,81 +812,71 @@ const SynthWavePage = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex space-x-4 mb-4">
-        {['sine', 'square', 'sawtooth', 'triangle', 'custom'].map((type) => (
-          <button
-            key={type}
-            onClick={() => handleWaveformChange(type as any)}
-            className={`px-4 py-2 rounded ${
-              selectedWaveform === type ? 'bg-green-500 text-white' : 'bg-gray-200'
-            }`}
-          >
-            {type.charAt(0).toUpperCase() + type.slice(1)}
-          </button>
-        ))}
-      </div>
+    <div className="relative p-6">
+      <WaveConfigPanel
+        selectedWaveform={selectedWaveform}
+        effects={effects}
+        drawingConfig={drawingConfig}
+        onWaveformChange={handleWaveformChange}
+        onEffectChange={handleEffectChange}
+        onDrawingConfigChange={(config) => setDrawingConfig(prev => ({ ...prev, ...config }))}
+      />
 
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-2">Reverb</label>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={effects.reverb}
-            onChange={(e) => handleEffectChange('reverb', parseFloat(e.target.value))}
-            className="w-full"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-2">Distortion</label>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={effects.distortion}
-            onChange={(e) => handleEffectChange('distortion', parseFloat(e.target.value))}
-            className="w-full"
-          />
-        </div>
-      </div>
-
-      <div className="w-full h-[400px] bg-gray-900 rounded-lg">
-        <canvas
-          ref={canvasRef}
-          width={800}
-          height={400}
-          className={`w-full h-full border border-gray-700 rounded ${
-            editingState.isEditMode ? 'cursor-pointer' : 'cursor-crosshair'
-          }`}
-          onMouseDown={handleMouseDown}
-          onMouseMove={(e) => {
-            if (editingState.isEditMode) {
-              if (selectedGap !== null && isDrawing) {
-                handleGapAdjustment(e)
-              } else {
-                handleCanvasMouseMove(e)
-              }
-            } else if (isDrawing) {
-              draw(e)
+      <canvas
+        ref={canvasRef}
+        onClick={(e) => {
+          if (editingState.isEditMode && editingState.hoveredSegment) {
+            handleLineClick(e)
+          }
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={(e) => {
+          if (editingState.isEditMode) {
+            if (selectedGap !== null && isDrawing) {
+              handleGapAdjustment(e)
+            } else {
+              handleCanvasMouseMove(e)
             }
-          }}
-          onMouseUp={() => {
-            setIsDrawing(false)
-            setSelectedGap(null)
-            stopDrawing()
-          }}
-          onMouseLeave={() => {
-            setIsDrawing(false)
-            setSelectedGap(null)
-            stopDrawing()
-          }}
-        />
-      </div>
-
+          } else if (isDrawing) {
+            draw(e)
+          }
+        }}
+        onMouseUp={() => {
+          setIsDrawing(false)
+          setSelectedGap(null)
+          stopDrawing()
+        }}
+        onMouseLeave={() => {
+          setIsDrawing(false)
+          setSelectedGap(null)
+          stopDrawing()
+        }}
+        width={800}
+        height={400}
+        className={`w-full h-full border border-gray-700 rounded ${
+          editingState.isEditMode ? 'cursor-pointer' : 'cursor-crosshair'
+        }`}
+      />
+      
+      {editingState.tooltipPosition && editingState.selectedLineSettings && (
+        <Tooltip
+          position={editingState.tooltipPosition}
+          isVisible={true}
+        >
+          <SoundShapingTooltip
+            currentSettings={editingState.selectedLineSettings}
+            onWaveformChange={(waveform) => updateLineSettings({ waveform })}
+            onVolumeChange={(volume) => updateLineSettings({ volume })}
+            onFrequencyRangeChange={(min, max) => 
+              updateLineSettings({ frequencyRange: { min, max } })}
+            onADSRChange={(attack, decay, sustain, release) => 
+              updateLineSettings({ adsr: { attack, decay, sustain, release } })}
+            onVibratoChange={(rate, depth) => 
+              updateLineSettings({ vibrato: { rate, depth } })}
+          />
+        </Tooltip>
+      )}
+      
       {/* Save Sound Controls */}
       <div className="flex space-x-4 items-center">
         <input

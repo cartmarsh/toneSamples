@@ -6,6 +6,10 @@ import Tooltip from '../tooltip/Tooltip'
 import SoundShapingTooltip from '../tooltip/SoundShapingTooltip'
 import WaveConfigPanel from './WaveConfigPanel'
 
+// ============= Type Definitions =============
+/**
+ * Represents a point in the waveform with its coordinates and timing information
+ */
 interface WaveformPoint {
   x: number
   y: number
@@ -14,9 +18,15 @@ interface WaveformPoint {
   gapDuration?: number  // Duration of gap before this point
 }
 
+/**
+ * Available waveform types for synthesis
+ */
 type WaveformType = 'sine' | 'square' | 'sawtooth' | 'triangle' | 'custom'
 type EffectType = 'reverb' | 'distortion'
 
+/**
+ * Structure for storing saved sound configurations
+ */
 interface SavedSound {
   id: number
   name: string
@@ -28,6 +38,9 @@ interface SavedSound {
   }
 }
 
+/**
+ * Represents an event in the timeline for playback
+ */
 interface TimelineEvent {
   id: string
   soundId: number
@@ -36,6 +49,9 @@ interface TimelineEvent {
   track: number
 }
 
+/**
+ * State for managing waveform editing and interactions
+ */
 interface EditingState {
   isEditMode: boolean
   hoveredSegment: LineSegment | null
@@ -50,6 +66,9 @@ interface EditingState {
   } | null
 }
 
+/**
+ * Represents a segment of the waveform line for editing
+ */
 interface LineSegment {
   startIndex: number
   endIndex: number
@@ -57,26 +76,23 @@ interface LineSegment {
 }
 
 const SynthWavePage = () => {
+  // ============= Refs =============
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const timelineRef = useRef<HTMLDivElement>(null)
+  const playheadRef = useRef<number>(0)
+  const animationFrameRef = useRef<number>()
+
+  // ============= Core State =============
   const [synth, setSynth] = useState<Tone.Synth | null>(null)
   const [waveformPoints, setWaveformPoints] = useState<WaveformPoint[]>([])
-  const [isDrawing, setIsDrawing] = useState(false)
   const [selectedWaveform, setSelectedWaveform] = useState<WaveformType>('sine')
   const [effects, setEffects] = useState({
     reverb: 0,
     distortion: 0
   })
-  const [savedSounds, setSavedSounds] = useState<SavedSound[]>([])
-  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([])
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentSoundName, setCurrentSoundName] = useState('')
-  const [draggingEvent, setDraggingEvent] = useState<TimelineEvent | null>(null)
-  const timelineRef = useRef<HTMLDivElement>(null)
-  const PIXELS_PER_SECOND = 100
-  const [playheadPosition, setPlayheadPosition] = useState(0)
-  const [activeEvents, setActiveEvents] = useState<string[]>([])
-  const playheadRef = useRef<number>(0)
-  const animationFrameRef = useRef<number>()
+
+  // ============= Drawing and Interaction State =============
+  const [isDrawing, setIsDrawing] = useState(false)
   const [startTime, setStartTime] = useState<number | null>(null)
   const [lastDrawTime, setLastDrawTime] = useState<number | null>(null)
   const [lastLineEndTime, setLastLineEndTime] = useState<number | null>(null)
@@ -88,6 +104,17 @@ const SynthWavePage = () => {
     tooltipPosition: null,
     selectedLineSettings: null
   })
+
+  // ============= Playback and Timeline State =============
+  const [savedSounds, setSavedSounds] = useState<SavedSound[]>([])
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([])
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentSoundName, setCurrentSoundName] = useState('')
+  const [draggingEvent, setDraggingEvent] = useState<TimelineEvent | null>(null)
+  const [playheadPosition, setPlayheadPosition] = useState(0)
+  const [activeEvents, setActiveEvents] = useState<string[]>([])
+
+  // ============= Configuration State =============
   const [drawingConfig, setDrawingConfig] = useState({
     tempo: 120,
     gridSize: 16,
@@ -95,7 +122,10 @@ const SynthWavePage = () => {
     autoConnect: true,
     loopMode: false
   })
-  const [isConfigExpanded, setIsConfigExpanded] = useState(true);
+  const [isConfigExpanded, setIsConfigExpanded] = useState(true)
+
+  // Constants
+  const PIXELS_PER_SECOND = 100
 
   useEffect(() => {
     // Initialize Tone.js with effects chain
@@ -116,6 +146,12 @@ const SynthWavePage = () => {
     }
   }, [selectedWaveform, effects])
 
+  /**
+   * Draws the waveform on the canvas with support for hovering and gap indicators
+   * @param ctx - The canvas rendering context
+   * @param points - Array of waveform points to draw
+   * @param hoveredSegment - Currently hovered line segment (optional)
+   */
   const drawWaveform = (ctx: CanvasRenderingContext2D, points: WaveformPoint[], hoveredSegment: LineSegment | null = null) => {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
     
@@ -177,6 +213,12 @@ const SynthWavePage = () => {
     })
   }
 
+  /**
+   * Draws a single line segment of the waveform with optional hover effects
+   * @param ctx - The canvas rendering context
+   * @param points - Array of points forming the line
+   * @param isHovered - Whether the line is currently being hovered
+   */
   const drawLine = (ctx: CanvasRenderingContext2D, points: WaveformPoint[], isHovered: boolean) => {
     // Draw the main line
     ctx.beginPath()

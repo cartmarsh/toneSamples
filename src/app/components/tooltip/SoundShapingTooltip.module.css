@@ -1,23 +1,84 @@
 .soundShapingTooltip {
-  width: 300px;
+  min-width: 300px;
+  padding: 16px;
 }
 
 .section {
+  margin-bottom: 20px;
+}
+
+.section:last-child {
+  margin-bottom: 0;
+}
+
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e5e7eb;
+  margin-bottom: 12px;
+}
+
+.stateGrid {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
   margin-bottom: 16px;
 }
 
-.section h3 {
-  margin: 0 0 8px 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
+.stateItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
 }
 
-.section select,
-.section input[type="range"],
-.section input[type="number"] {
+.stateLabel {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.stateValue {
+  color: #e5e7eb;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+}
+
+.selectInput {
   width: 100%;
-  margin: 4px 0;
+  padding: 8px;
+  background: #374151;
+  border: 1px solid #4b5563;
+  border-radius: 4px;
+  color: #e5e7eb;
+  font-size: 14px;
+}
+
+.rangeInput {
+  width: 100%;
+  margin: 8px 0;
+  -webkit-appearance: none;
+  background: #374151;
+  border-radius: 4px;
+  height: 6px;
+}
+
+.rangeInput::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #60a5fa;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.rangeInput::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #60a5fa;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
 }
 
 .rangeInputs {
@@ -26,63 +87,30 @@
   gap: 8px;
 }
 
-.rangeInputs input[type="number"] {
+.numberInput {
   width: 80px;
+  padding: 4px 8px;
+  background: #374151;
+  border: 1px solid #4b5563;
+  border-radius: 4px;
+  color: #e5e7eb;
+  font-size: 14px;
 }
 
-.adsrControls,
-.vibratoControls {
+.adsrControls, .vibratoControls {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: 12px;
 }
 
-.vibratoControls {
-  grid-template-columns: repeat(2, 1fr);
-}
-
-.adsrControls > div,
-.vibratoControls > div {
+.adsrControls > div, .vibratoControls > div {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 4px;
 }
 
-.adsrControls label,
-.vibratoControls label {
+.adsrControls label, .vibratoControls label {
   font-size: 12px;
-  margin-bottom: 4px;
-}
-
-/* Custom styling for range inputs */
-.rangeInput {
-  -webkit-appearance: none;
-  height: 4px;
-  background: #ddd;
-  border-radius: 2px;
-  outline: none;
-}
-
-.rangeInput::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  background: #4a90e2;
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-/* Custom styling for select */
-.selectInput {
-  padding: 6px;
-  border-radius: 4px;
-  border: 1px solid #ddd;
-  background-color: white;
-}
-
-/* Custom styling for number inputs */
-.numberInput {
-  padding: 6px;
-  border-radius: 4px;
-  border: 1px solid #ddd;
+  color: #9ca3af;
 }

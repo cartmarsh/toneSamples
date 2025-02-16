@@ -220,6 +220,9 @@ const SynthWavePage = () => {
    * @param isHovered - Whether the line is currently being hovered
    */
   const drawLine = (ctx: CanvasRenderingContext2D, points: WaveformPoint[], isHovered: boolean) => {
+    const MAX_GAP_WIDTH = 150 // Maximum visual width for gaps in pixels
+    const PIXELS_PER_SECOND = 50 // Base scale for gap visualization
+
     // Draw the main line
     ctx.beginPath()
     ctx.moveTo(points[0].x, points[0].y)
@@ -232,26 +235,33 @@ const SynthWavePage = () => {
     ctx.strokeStyle = isHovered ? '#4CAF50' : '#2196F3'
     ctx.stroke()
 
-    // Draw gap indicator if this is the end of a line
-    const lastPoint = points[points.length - 1]
-    if (lastPoint.gapDuration) {
-      const gapWidth = lastPoint.gapDuration * 50
-      
-      // Draw gap indicator (dotted line)
-      ctx.beginPath()
-      ctx.setLineDash([5, 5])
-      ctx.moveTo(lastPoint.x, lastPoint.y)
-      ctx.lineTo(lastPoint.x + gapWidth, lastPoint.y)
-      ctx.strokeStyle = '#888888'
-      ctx.lineWidth = 1
-      ctx.stroke()
-      ctx.setLineDash([])
+    // Draw gaps for all points
+    points.forEach((point, index) => {
+      if (point.gapDuration) {
+        const baseGapWidth = point.gapDuration * PIXELS_PER_SECOND
+        let displayWidth = baseGapWidth
 
-      // Draw gap duration text
-      ctx.font = '12px Arial'
-      ctx.fillStyle = '#888888'
-      ctx.fillText(`${lastPoint.gapDuration.toFixed(2)}s`, lastPoint.x + 5, lastPoint.y - 10)
-    }
+        // Scale down if gap is too long
+        if (baseGapWidth > MAX_GAP_WIDTH) {
+          displayWidth = MAX_GAP_WIDTH
+        }
+        
+        // Draw gap indicator (dotted line)
+        ctx.beginPath()
+        ctx.setLineDash([5, 5])
+        ctx.moveTo(point.x, point.y)
+        ctx.lineTo(point.x + displayWidth, point.y)
+        ctx.strokeStyle = '#888888'
+        ctx.lineWidth = 1
+        ctx.stroke()
+        ctx.setLineDash([])
+
+        // Draw gap duration text
+        ctx.font = '12px Arial'
+        ctx.fillStyle = '#888888'
+        ctx.fillText(`${point.gapDuration.toFixed(2)}s`, point.x + 5, point.y - 10)
+      }
+    })
   }
 
   const findLineSegment = (x: number, y: number): LineSegment | null => {
@@ -376,21 +386,17 @@ const SynthWavePage = () => {
   }
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!editingState.isEditMode) return
+    if (!editingState.isEditMode || selectedGap !== null || isDrawing) return // Prevent tooltip during gap adjustment or drawing
 
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
 
-    setEditingState(prev => ({
-      ...prev,
-      tooltipPosition: { x, y }
-    }));
-
     const segment = findLineSegment(x, y)
     if (segment) {
       setEditingState(prev => ({
         ...prev,
+        tooltipPosition: { x, y },
         selectedSegment: segment,
         selectedLineSettings: {
           waveform: selectedWaveform === 'custom' ? 'sine' : selectedWaveform,
@@ -807,27 +813,45 @@ const SynthWavePage = () => {
   }
 
   const handleGapAdjustment = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!editingState.isEditMode || selectedGap === null || !isDrawing) return
+    if (selectedGap === null || !isDrawing) return
 
-    const coords = getScaledCoordinates(e)
-    if (!coords) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const MAX_GAP_WIDTH = 150
+    const PIXELS_PER_SECOND = 50
     
-    // Update gap duration based on drag distance
-    setWaveformPoints(prev => {
-      const newPoints = [...prev]
-      const point = newPoints[selectedGap]
-      if (point) {
-        const startX = point.x
-        const dragDistance = Math.max(0, coords.x - startX)
-        const newGapDuration = dragDistance / 50
-        point.gapDuration = newGapDuration
-      }
-      return newPoints
-    })
+    // Clear any existing tooltip when adjusting gaps
+    setEditingState(prev => ({
+      ...prev,
+      tooltipPosition: null,
+      selectedSegment: null,
+      selectedLineSettings: null
+    }))
 
+    // Calculate new gap duration based on mouse position
+    const point = waveformPoints[selectedGap]
+    const dragDistance = Math.max(0, x - point.x)
+    let newGapDuration
+
+    if (dragDistance > MAX_GAP_WIDTH) {
+      // Scale the duration proportionally when beyond max width
+      const scaleFactor = dragDistance / MAX_GAP_WIDTH
+      newGapDuration = (MAX_GAP_WIDTH / PIXELS_PER_SECOND) * scaleFactor
+    } else {
+      newGapDuration = dragDistance / PIXELS_PER_SECOND
+    }
+    
+    const newPoints = [...waveformPoints]
+    newPoints[selectedGap] = {
+      ...newPoints[selectedGap],
+      gapDuration: newGapDuration
+    }
+    
+    setWaveformPoints(newPoints)
+    
     const ctx = canvasRef.current?.getContext('2d')
     if (ctx) {
-      drawWaveform(ctx, waveformPoints, editingState.hoveredSegment)
+      drawWaveform(ctx, newPoints, editingState.hoveredSegment)
     }
   }
 
@@ -897,7 +921,7 @@ const SynthWavePage = () => {
               </button>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
               <input
                 type="text"
                 value={currentSoundName}
@@ -905,6 +929,13 @@ const SynthWavePage = () => {
                 placeholder="Sound name"
                 className="px-4 py-2 bg-gray-800 border border-gray-700 rounded text-white placeholder-gray-500"
               />
+              <button
+                onClick={saveCurrentSound}
+                disabled={waveformPoints.length === 0 || !currentSoundName}
+                className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-500"
+              >
+                Save
+              </button>
             </div>
           </div>
         </div>
@@ -965,7 +996,9 @@ const SynthWavePage = () => {
           width={800}
           height={400}
           className={`w-full h-full border border-gray-700 rounded ${
-            editingState.isEditMode ? 'cursor-pointer' : 'cursor-crosshair'
+            editingState.isEditMode 
+              ? 'cursor-pointer bg-slate-900' 
+              : 'cursor-crosshair bg-slate-800'
           }`}
         />
         

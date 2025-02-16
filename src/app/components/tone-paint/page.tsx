@@ -11,11 +11,20 @@ const TonePaint = () => {
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [prevPosition, setPrevPosition] = useState<{ x: number; y: number } | null>(null);
   const [lastTime, setLastTime] = useState<number | null>(null);
+  const synthRef = useRef<Tone.Synth | null>(null);
+  const pannerRef = useRef<Tone.Panner | null>(null);
 
   // Initialize Tone.js synth and effects
-  const synth = new Tone.Synth().toDestination();
-  const panner = new Tone.Panner().toDestination();
-  synth.connect(panner);
+  useEffect(() => {
+    synthRef.current = new Tone.Synth().toDestination();
+    pannerRef.current = new Tone.Panner().toDestination();
+    synthRef.current.connect(pannerRef.current);
+
+    return () => {
+      synthRef.current?.dispose();
+      pannerRef.current?.dispose();
+    };
+  }, []);
 
   // Handle drawing on the canvas
   useEffect(() => {
@@ -60,8 +69,8 @@ const TonePaint = () => {
         const volume = brushSize / 50; // Map brush size to volume
 
         // Trigger sound with envelope
-        synth.triggerAttack(Tone.Midi(pitch).toFrequency(), Tone.now(), envelope);
-        synth.triggerRelease(Tone.now() + 0.1); // Release after a short duration
+        synthRef.current?.triggerAttack(Tone.Midi(pitch).toFrequency(), Tone.now(), envelope);
+        synthRef.current?.triggerRelease(Tone.now() + 0.1); // Release after a short duration
 
         // Update previous position and time
         setPrevPosition({ x, y });
@@ -82,9 +91,13 @@ const TonePaint = () => {
       const pan = (x / canvas.width) * 2 - 1; // Map x to stereo pan (-1 to 1)
       const volume = brushSize / 50; // Map brush size to volume
 
-      synth.triggerAttackRelease(Tone.Midi(pitch).toFrequency(), "8n");
-      panner.pan.value = pan;
-      synth.volume.value = Tone.gainToDb(volume);
+      synthRef.current?.triggerAttackRelease(Tone.Midi(pitch).toFrequency(), "8n");
+      if (pannerRef.current) {
+        pannerRef.current.pan.value = pan;
+      }
+      if (synthRef.current) {
+        synthRef.current.volume.value = Tone.gainToDb(volume);
+      }
     };
 
     canvas.addEventListener("mousedown", startDrawing);
@@ -101,8 +114,10 @@ const TonePaint = () => {
   // Clear the canvas
   const clearCanvas = () => {
     const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    context?.clearRect(0, 0, canvas.width, canvas.height);
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
   };
 
   return (

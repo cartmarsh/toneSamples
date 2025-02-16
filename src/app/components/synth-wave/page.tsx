@@ -107,7 +107,7 @@ const SynthWavePage = () => {
             index > hoveredSegment.startIndex && 
             index <= hoveredSegment.endIndex + 1
           
-          drawLine(ctx, currentLine, isHovered)
+          drawLine(ctx, currentLine, isHovered ?? false)
           
           // Store gap handle info for later drawing
           const lastPoint = currentLine[currentLine.length - 1]
@@ -129,7 +129,7 @@ const SynthWavePage = () => {
     if (currentLine.length > 0) {
       const isHovered = hoveredSegment && 
         hoveredSegment.endIndex === points.length - 1
-      drawLine(ctx, currentLine, isHovered)
+      drawLine(ctx, currentLine, isHovered ?? false)
       
       // Store last gap handle if needed
       const lastPoint = currentLine[currentLine.length - 1]

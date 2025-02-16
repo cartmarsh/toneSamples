@@ -1,33 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Tone Samples
+
+A [Next.js](https://nextjs.org) project that features an interactive synthesizer wave editor built with Tone.js.
+
+## Features
+
+### Synth Wave Editor
+
+The synth-wave component (`/app/components/synth-wave`) is an interactive audio synthesizer that allows you to:
+
+- Draw custom waveforms by clicking and dragging on the canvas
+- Edit existing waveforms by clicking on segments
+- Apply effects like reverb and distortion
+- Configure drawing settings:
+  - Tempo and grid size
+  - Snap-to-grid functionality
+  - Auto-connect points
+  - Loop mode
+- Save and replay your sound creations
+- Organize sounds in a timeline for complex compositions
+
+The editor provides real-time audio feedback and visualization of your waveforms, making it an intuitive tool for sound design and experimentation.
 
 ## Getting Started
 
-First, run the development server:
-
+1. Install dependencies:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Build the project:
+```bash
+npm run build
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Start the development server:
+```bash
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+## Usage
+
+1. Navigate to the synth-wave editor at `/components/synth-wave`
+2. Use the drawing tools to create your waveform:
+   - Click and drag to draw
+   - Use the configuration panel to adjust settings
+   - Toggle edit mode to modify existing segments
+3. Play your creation using the "Play Drawing" button
+4. Save your sounds and arrange them in the timeline
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
+To learn more about the technologies used in this project:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Tone.js Documentation](https://tonejs.github.io/)
 
 ## Deploy on Vercel
 

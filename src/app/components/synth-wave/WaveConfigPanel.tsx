@@ -30,11 +30,11 @@ const WaveConfigPanel: React.FC<WaveConfigPanelProps> = ({
   onDrawingConfigChange,
 }) => {
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+    <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Waveform Selection */}
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold mb-3">Waveform Type</h3>
+          <h3 className="text-lg font-semibold mb-3 text-white">Waveform Type</h3>
           <div className="flex flex-wrap gap-2">
             {(['sine', 'square', 'sawtooth', 'triangle', 'custom'] as const).map((type) => (
               <button
@@ -43,7 +43,7 @@ const WaveConfigPanel: React.FC<WaveConfigPanelProps> = ({
                 className={`px-4 py-2 rounded-md transition-colors ${
                   selectedWaveform === type 
                     ? 'bg-blue-500 text-white' 
-                    : 'bg-gray-100 hover:bg-gray-200'
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-100'
                 }`}
               >
                 {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -52,12 +52,14 @@ const WaveConfigPanel: React.FC<WaveConfigPanelProps> = ({
           </div>
         </div>
 
-        {/* Effects */}
+        {/* Effects Controls */}
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold mb-3">Effects</h3>
+          <h3 className="text-lg font-semibold mb-3 text-white">Effects</h3>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Reverb</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Reverb: {effects.reverb.toFixed(2)}
+              </label>
               <input
                 type="range"
                 min="0"
@@ -67,14 +69,11 @@ const WaveConfigPanel: React.FC<WaveConfigPanelProps> = ({
                 onChange={(e) => onEffectChange('reverb', parseFloat(e.target.value))}
                 className="w-full"
               />
-              <div className="flex justify-between text-xs text-gray-500">
-                <span>0</span>
-                <span>{effects.reverb.toFixed(2)}</span>
-                <span>1</span>
-              </div>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Distortion</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Distortion: {effects.distortion.toFixed(2)}
+              </label>
               <input
                 type="range"
                 min="0"
@@ -84,80 +83,74 @@ const WaveConfigPanel: React.FC<WaveConfigPanelProps> = ({
                 onChange={(e) => onEffectChange('distortion', parseFloat(e.target.value))}
                 className="w-full"
               />
-              <div className="flex justify-between text-xs text-gray-500">
-                <span>0</span>
-                <span>{effects.distortion.toFixed(2)}</span>
-                <span>1</span>
-              </div>
             </div>
           </div>
         </div>
 
         {/* Drawing Configuration */}
-        <div className="space-y-4 md:col-span-2">
-          <h3 className="text-lg font-semibold mb-3">Drawing Configuration</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold mb-3 text-white">Drawing Settings</h3>
+          <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Tempo (BPM)</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Tempo: {drawingConfig.tempo} BPM
+              </label>
               <input
-                type="number"
-                min="30"
-                max="240"
+                type="range"
+                min="60"
+                max="200"
                 value={drawingConfig.tempo}
                 onChange={(e) => onDrawingConfigChange({ tempo: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 border rounded-md"
+                className="w-full"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Grid Size</label>
-              <select
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Grid Size: {drawingConfig.gridSize}
+              </label>
+              <input
+                type="range"
+                min="4"
+                max="32"
                 value={drawingConfig.gridSize}
                 onChange={(e) => onDrawingConfigChange({ gridSize: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 border rounded-md"
-              >
-                <option value="4">1/4 Beat</option>
-                <option value="8">1/8 Beat</option>
-                <option value="16">1/16 Beat</option>
-                <option value="32">1/32 Beat</option>
-              </select>
+                className="w-full"
+              />
             </div>
-            <div className="space-y-2">
-              <div className="flex items-center">
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-gray-300">
                 <input
                   type="checkbox"
-                  id="snapToGrid"
                   checked={drawingConfig.snapToGrid}
                   onChange={(e) => onDrawingConfigChange({ snapToGrid: e.target.checked })}
-                  className="mr-2"
+                  className="rounded border-gray-700"
                 />
-                <label htmlFor="snapToGrid" className="text-sm font-medium">Snap to Grid</label>
-              </div>
-              <div className="flex items-center">
+                Snap to Grid
+              </label>
+              <label className="flex items-center gap-2 text-gray-300">
                 <input
                   type="checkbox"
-                  id="autoConnect"
                   checked={drawingConfig.autoConnect}
                   onChange={(e) => onDrawingConfigChange({ autoConnect: e.target.checked })}
-                  className="mr-2"
+                  className="rounded border-gray-700"
                 />
-                <label htmlFor="autoConnect" className="text-sm font-medium">Auto-Connect Points</label>
-              </div>
-              <div className="flex items-center">
+                Auto Connect
+              </label>
+              <label className="flex items-center gap-2 text-gray-300">
                 <input
                   type="checkbox"
-                  id="loopMode"
                   checked={drawingConfig.loopMode}
                   onChange={(e) => onDrawingConfigChange({ loopMode: e.target.checked })}
-                  className="mr-2"
+                  className="rounded border-gray-700"
                 />
-                <label htmlFor="loopMode" className="text-sm font-medium">Loop Mode</label>
-              </div>
+                Loop Mode
+              </label>
             </div>
           </div>
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
 export default WaveConfigPanel

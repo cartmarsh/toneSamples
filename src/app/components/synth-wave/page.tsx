@@ -95,6 +95,7 @@ const SynthWavePage = () => {
     autoConnect: true,
     loopMode: false
   })
+  const [isConfigExpanded, setIsConfigExpanded] = useState(true);
 
   useEffect(() => {
     // Initialize Tone.js with effects chain
@@ -332,22 +333,23 @@ const SynthWavePage = () => {
     }
   }
 
-  const handleLineClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!editingState.isEditMode || isDrawing) return
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!editingState.isEditMode) return
 
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const rect = canvas.getBoundingClientRect()
+    const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
+
+    setEditingState(prev => ({
+      ...prev,
+      tooltipPosition: { x, y }
+    }));
 
     const segment = findLineSegment(x, y)
     if (segment) {
       setEditingState(prev => ({
         ...prev,
         selectedSegment: segment,
-        tooltipPosition: { x: e.clientX, y: e.clientY },
         selectedLineSettings: {
           waveform: selectedWaveform === 'custom' ? 'sine' : selectedWaveform,
           volume: 0.5,
@@ -540,9 +542,12 @@ const SynthWavePage = () => {
     }
   }
 
-  const handleEffectChange = (effect: EffectType, value: number) => {
-    setEffects(prev => ({ ...prev, [effect]: value }))
-  }
+  const handleEffectChange = (effect: 'reverb' | 'distortion', value: number) => {
+    setEffects(prev => ({
+      ...prev,
+      [effect]: value
+    }));
+  };
 
   const saveCurrentSound = () => {
     if (waveformPoints.length === 0 || !currentSoundName) return
@@ -811,233 +816,291 @@ const SynthWavePage = () => {
     }
   }
 
+  const handleDrawingConfigChange = (config: Partial<typeof drawingConfig>) => {
+    setDrawingConfig(prev => ({
+      ...prev,
+      ...config
+    }));
+  };
+
   return (
-    <div className="relative p-6">
-      <WaveConfigPanel
-        selectedWaveform={selectedWaveform}
-        effects={effects}
-        drawingConfig={drawingConfig}
-        onWaveformChange={handleWaveformChange}
-        onEffectChange={handleEffectChange}
-        onDrawingConfigChange={(config) => setDrawingConfig(prev => ({ ...prev, ...config }))}
-      />
-
-      <canvas
-        ref={canvasRef}
-        onClick={(e) => {
-          if (editingState.isEditMode && editingState.hoveredSegment) {
-            handleLineClick(e)
-          }
-        }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={(e) => {
-          if (editingState.isEditMode) {
-            if (selectedGap !== null && isDrawing) {
-              handleGapAdjustment(e)
-            } else {
-              handleCanvasMouseMove(e)
-            }
-          } else if (isDrawing) {
-            draw(e)
-          }
-        }}
-        onMouseUp={() => {
-          setIsDrawing(false)
-          setSelectedGap(null)
-          stopDrawing()
-        }}
-        onMouseLeave={() => {
-          setIsDrawing(false)
-          setSelectedGap(null)
-          stopDrawing()
-        }}
-        width={800}
-        height={400}
-        className={`w-full h-full border border-gray-700 rounded ${
-          editingState.isEditMode ? 'cursor-pointer' : 'cursor-crosshair'
-        }`}
-      />
-      
-      {editingState.tooltipPosition && editingState.selectedLineSettings && (
-        <Tooltip
-          position={editingState.tooltipPosition}
-          isVisible={true}
-        >
-          <SoundShapingTooltip
-            currentSettings={editingState.selectedLineSettings}
-            onWaveformChange={(waveform) => updateLineSettings({ waveform })}
-            onVolumeChange={(volume) => updateLineSettings({ volume })}
-            onFrequencyRangeChange={(min, max) => 
-              updateLineSettings({ frequencyRange: { min, max } })}
-            onADSRChange={(attack, decay, sustain, release) => 
-              updateLineSettings({ adsr: { attack, decay, sustain, release } })}
-            onVibratoChange={(rate, depth) => 
-              updateLineSettings({ vibrato: { rate, depth } })}
-          />
-        </Tooltip>
-      )}
-      
-      {/* Save Sound Controls */}
-      <div className="flex space-x-4 items-center">
-        <input
-          type="text"
-          value={currentSoundName}
-          onChange={(e) => setCurrentSoundName(e.target.value)}
-          placeholder="Sound name"
-          className="px-4 py-2 border rounded"
-        />
-        <button
-          onClick={saveCurrentSound}
-          disabled={!currentSoundName || waveformPoints.length === 0}
-          className="px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50"
-        >
-          Save Sound
-        </button>
-        <button
-          onClick={() => setEditingState(prev => ({ ...prev, isEditMode: !prev.isEditMode }))}
-          className={`px-4 py-2 ${editingState.isEditMode ? 'bg-green-500' : 'bg-gray-500'} text-white rounded`}
-        >
-          {editingState.isEditMode ? 'Drawing Mode' : 'Edit Mode'}
-        </button>
-        <button
-          onClick={playCurrentDrawing}
-          disabled={waveformPoints.length === 0 || isPlaying}
-          className="px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
-        >
-          Play Drawing
-        </button>
-        <button
-          onClick={clearDrawing}
-          className="px-4 py-2 bg-red-500 text-white rounded"
-        >
-          Clear Drawing
-        </button>
-      </div>
-
-      {/* Saved Sounds List */}
-      <div className="grid grid-cols-2 gap-4">
-        {savedSounds.map(sound => (
-          <div key={sound.id} className="p-4 border rounded">
-            <h3 className="font-bold">{sound.name}</h3>
-            <div className="flex space-x-2 mt-2">
+    <div className="flex flex-col min-h-screen bg-gray-900">
+      <div className="sticky top-0 bg-gray-900 z-10 border-b border-gray-700">
+        {/* Always visible controls */}
+        <div className="p-4 border-b border-gray-700">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
               <button
-                onClick={() => playSavedSound(sound.id)}
-                className="px-3 py-1 bg-green-500 text-white rounded"
+                onClick={() => setEditingState(prev => ({ ...prev, isEditMode: !prev.isEditMode }))}
+                className={`px-4 py-2 rounded ${
+                  editingState.isEditMode ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-200'
+                }`}
               >
-                Play
+                {editingState.isEditMode ? 'Exit Edit Mode' : 'Edit Drawing'}
               </button>
+              
               <button
-                onClick={() => addToTimeline(sound.id, 0)}
-                className="px-3 py-1 bg-purple-500 text-white rounded"
+                onClick={playCurrentDrawing}
+                disabled={waveformPoints.length === 0 || isPlaying}
+                className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-green-500"
               >
-                Add to Timeline
+                Play Drawing
               </button>
+              
+              <button
+                onClick={clearDrawing}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500"
+              >
+                Clear Drawing
+              </button>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <input
+                type="text"
+                value={currentSoundName}
+                onChange={(e) => setCurrentSoundName(e.target.value)}
+                placeholder="Sound name"
+                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded text-white placeholder-gray-500"
+              />
             </div>
           </div>
-        ))}
+        </div>
+
+        {/* Collapsible config section */}
+        <div className="p-4">
+          <button 
+            onClick={() => setIsConfigExpanded(!isConfigExpanded)} 
+            className="flex items-center gap-2 text-white mb-4 hover:text-blue-400 transition-colors"
+          >
+            <span className={`transform transition-transform ${isConfigExpanded ? 'rotate-90' : ''}`}>
+              ▶
+            </span>
+            Configuration
+          </button>
+          
+          {isConfigExpanded && (
+            <div className="space-y-4">
+              <WaveConfigPanel
+                selectedWaveform={selectedWaveform}
+                onWaveformChange={setSelectedWaveform}
+                effects={effects}
+                onEffectChange={handleEffectChange}
+                drawingConfig={drawingConfig}
+                onDrawingConfigChange={handleDrawingConfigChange}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Enhanced Timeline */}
-      <div className="border rounded p-4">
-        <div className="flex justify-between mb-4">
-          <h2 className="text-lg font-bold">Timeline</h2>
+      <div className="flex-1 relative">
+        <canvas
+          ref={canvasRef}
+          onClick={handleCanvasClick}
+          onMouseDown={handleMouseDown}
+          onMouseMove={(e) => {
+            if (editingState.isEditMode) {
+              if (selectedGap !== null && isDrawing) {
+                handleGapAdjustment(e)
+              } else {
+                handleCanvasMouseMove(e)
+              }
+            } else if (isDrawing) {
+              draw(e)
+            }
+          }}
+          onMouseUp={() => {
+            setIsDrawing(false)
+            setSelectedGap(null)
+            stopDrawing()
+          }}
+          onMouseLeave={() => {
+            setIsDrawing(false)
+            setSelectedGap(null)
+            stopDrawing()
+          }}
+          width={800}
+          height={400}
+          className={`w-full h-full border border-gray-700 rounded ${
+            editingState.isEditMode ? 'cursor-pointer' : 'cursor-crosshair'
+          }`}
+        />
+        
+        {editingState.tooltipPosition && editingState.selectedLineSettings && (
+          <Tooltip
+            position={editingState.tooltipPosition}
+            isVisible={true}
+            onClose={() => setEditingState(prev => ({
+              ...prev,
+              tooltipPosition: null,
+              selectedLineSettings: null,
+              selectedSegment: null
+            }))}
+          >
+            <SoundShapingTooltip
+              currentSettings={editingState.selectedLineSettings}
+              onWaveformChange={(waveform) => updateLineSettings({ waveform })}
+              onVolumeChange={(volume) => updateLineSettings({ volume })}
+              onFrequencyRangeChange={(min, max) => 
+                updateLineSettings({ frequencyRange: { min, max } })}
+              onADSRChange={(attack, decay, sustain, release) => 
+                updateLineSettings({ adsr: { attack, decay, sustain, release } })}
+              onVibratoChange={(rate, depth) => 
+                updateLineSettings({ vibrato: { rate, depth } })}
+            />
+          </Tooltip>
+        )}
+        
+        {/* Save Sound Controls */}
+        <div className="flex space-x-4 items-center">
+          <input
+            type="text"
+            value={currentSoundName}
+            onChange={(e) => setCurrentSoundName(e.target.value)}
+            placeholder="Sound name"
+            className="px-4 py-2 border rounded"
+          />
           <button
-            onClick={playTimeline}
-            disabled={isPlaying || timelineEvents.length === 0}
+            onClick={playCurrentDrawing}
+            disabled={waveformPoints.length === 0 || isPlaying}
             className="px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
           >
-            Play Timeline
+            Play Drawing
           </button>
-        </div>
-
-        {/* Timeline ruler and playhead */}
-        <div className="h-6 border-b mb-2 relative">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <div
-              key={i}
-              className="absolute border-l h-full text-xs"
-              style={{ left: `${i * PIXELS_PER_SECOND}px` }}
-            >
-              {i}s
-            </div>
-          ))}
-          {/* Playhead */}
-          <div
-            className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
-            style={{ 
-              left: `${playheadPosition * PIXELS_PER_SECOND}px`,
-              transform: 'translateX(-50%)'
-            }}
-          />
-        </div>
-
-        {/* Timeline tracks */}
-        <div 
-          ref={timelineRef}
-          className="relative w-full overflow-x-auto"
-          style={{ minHeight: '200px' }}
-        >
-          {[0, 1, 2].map(track => (
-            <div
-              key={track}
-              className="flex h-16 bg-gray-100 dark:bg-gray-800 rounded mb-2 relative"
-              onDragOver={(e) => handleTimelineDragOver(e, track)}
-            >
-              {/* Playhead line */}
-              <div
-                className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
-                style={{ 
-                  left: `${playheadPosition * PIXELS_PER_SECOND}px`,
-                  transform: 'translateX(-50%)'
-                }}
-              />
-              {timelineEvents
-                .filter(event => event.track === track)
-                .map(event => {
-                  const sound = savedSounds.find(s => s.id === event.soundId)
-                  return (
-                    <div
-                      key={event.id}
-                      draggable
-                      onDragStart={() => handleDragStart(event)}
-                      onDragEnd={handleDragEnd}
-                      className={`absolute px-2 py-1 rounded cursor-move transition-all
-                        ${activeEvents.includes(event.id) 
-                          ? 'bg-purple-400 dark:bg-purple-500' 
-                          : 'bg-purple-200 dark:bg-purple-700'
-                        } hover:bg-purple-300 dark:hover:bg-purple-600`}
-                      style={{
-                        left: `${event.startTime * PIXELS_PER_SECOND}px`,
-                        width: `${event.duration * PIXELS_PER_SECOND}px`,
-                        top: '4px',
-                        bottom: '4px'
-                      }}
-                    >
-                      <div className="text-sm truncate">
-                        {sound?.name}
-                      </div>
-                      {/* Resize handles */}
-                      <div
-                        className="absolute top-0 bottom-0 right-0 w-2 cursor-ew-resize"
-                        onMouseDown={(e) => {
-                          // Add resize logic here
-                        }}
-                      />
-                    </div>
-                  )
-                })}
-            </div>
-          ))}
-        </div>
-
-        {/* Timeline controls */}
-        <div className="mt-4 flex space-x-4">
           <button
-            onClick={() => setTimelineEvents([])}
-            className="px-3 py-1 bg-red-500 text-white rounded"
+            onClick={clearDrawing}
+            className="px-4 py-2 bg-red-500 text-white rounded"
           >
-            Clear Timeline
+            Clear Drawing
           </button>
+        </div>
+
+        {/* Saved Sounds List */}
+        <div className="grid grid-cols-2 gap-4">
+          {savedSounds.map(sound => (
+            <div key={sound.id} className="p-4 border rounded">
+              <h3 className="font-bold">{sound.name}</h3>
+              <div className="flex space-x-2 mt-2">
+                <button
+                  onClick={() => playSavedSound(sound.id)}
+                  className="px-3 py-1 bg-green-500 text-white rounded"
+                >
+                  Play
+                </button>
+                <button
+                  onClick={() => addToTimeline(sound.id, 0)}
+                  className="px-3 py-1 bg-purple-500 text-white rounded"
+                >
+                  Add to Timeline
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Enhanced Timeline */}
+        <div className="border rounded p-4">
+          <div className="flex justify-between mb-4">
+            <h2 className="text-lg font-bold">Timeline</h2>
+            <button
+              onClick={playTimeline}
+              disabled={isPlaying || timelineEvents.length === 0}
+              className="px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
+            >
+              Play Timeline
+            </button>
+          </div>
+
+          {/* Timeline ruler and playhead */}
+          <div className="h-6 border-b mb-2 relative">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div
+                key={i}
+                className="absolute border-l h-full text-xs"
+                style={{ left: `${i * PIXELS_PER_SECOND}px` }}
+              >
+                {i}s
+              </div>
+            ))}
+            {/* Playhead */}
+            <div
+              className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
+              style={{ 
+                left: `${playheadPosition * PIXELS_PER_SECOND}px`,
+                transform: 'translateX(-50%)'
+              }}
+            />
+          </div>
+
+          {/* Timeline tracks */}
+          <div 
+            ref={timelineRef}
+            className="relative w-full overflow-x-auto"
+            style={{ minHeight: '200px' }}
+          >
+            {[0, 1, 2].map(track => (
+              <div
+                key={track}
+                className="flex h-16 bg-gray-100 dark:bg-gray-800 rounded mb-2 relative"
+                onDragOver={(e) => handleTimelineDragOver(e, track)}
+              >
+                {/* Playhead line */}
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
+                  style={{ 
+                    left: `${playheadPosition * PIXELS_PER_SECOND}px`,
+                    transform: 'translateX(-50%)'
+                  }}
+                />
+                {timelineEvents
+                  .filter(event => event.track === track)
+                  .map(event => {
+                    const sound = savedSounds.find(s => s.id === event.soundId)
+                    return (
+                      <div
+                        key={event.id}
+                        draggable
+                        onDragStart={() => handleDragStart(event)}
+                        onDragEnd={handleDragEnd}
+                        className={`absolute px-2 py-1 rounded cursor-move transition-all
+                          ${activeEvents.includes(event.id) 
+                            ? 'bg-purple-400 dark:bg-purple-500' 
+                            : 'bg-purple-200 dark:bg-purple-700'
+                          } hover:bg-purple-300 dark:hover:bg-purple-600`}
+                        style={{
+                          left: `${event.startTime * PIXELS_PER_SECOND}px`,
+                          width: `${event.duration * PIXELS_PER_SECOND}px`,
+                          top: '4px',
+                          bottom: '4px'
+                        }}
+                      >
+                        <div className="text-sm truncate">
+                          {sound?.name}
+                        </div>
+                        {/* Resize handles */}
+                        <div
+                          className="absolute top-0 bottom-0 right-0 w-2 cursor-ew-resize"
+                          onMouseDown={(e) => {
+                            // Add resize logic here
+                          }}
+                        />
+                      </div>
+                    )
+                  })}
+              </div>
+            ))}
+          </div>
+
+          {/* Timeline controls */}
+          <div className="mt-4 flex space-x-4">
+            <button
+              onClick={() => setTimelineEvents([])}
+              className="px-3 py-1 bg-red-500 text-white rounded"
+            >
+              Clear Timeline
+            </button>
+          </div>
         </div>
       </div>
     </div>

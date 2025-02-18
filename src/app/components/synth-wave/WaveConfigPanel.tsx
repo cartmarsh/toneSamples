@@ -40,11 +40,11 @@ const WaveConfigPanel: React.FC<WaveConfigPanelProps> = ({
               <button
                 key={type}
                 onClick={() => onWaveformChange(type)}
-                className={`px-4 py-2 rounded-md transition-colors ${
+                className={`px-4 py-2 rounded-lg transition-all duration-200 border ${
                   selectedWaveform === type 
-                    ? 'bg-blue-500 text-white' 
-                    : 'bg-gray-700 hover:bg-gray-600 text-gray-100'
-                }`}
+                    ? 'bg-blue-600 text-white border-blue-400 shadow-lg shadow-blue-500/20' 
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-100 border-gray-600 hover:border-gray-500'
+                } hover:scale-105 transform`}
               >
                 {type.charAt(0).toUpperCase() + type.slice(1)}
               </button>

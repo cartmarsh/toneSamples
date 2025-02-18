@@ -898,9 +898,11 @@ const SynthWavePage = () => {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setEditingState(prev => ({ ...prev, isEditMode: !prev.isEditMode }))}
-                className={`px-4 py-2 rounded ${
-                  editingState.isEditMode ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-200'
-                }`}
+                className={`px-4 py-2 rounded-lg transition-all duration-200 border ${
+                  editingState.isEditMode 
+                    ? 'bg-blue-600 text-white border-blue-400 hover:bg-blue-500 shadow-lg shadow-blue-500/20' 
+                    : 'bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600 hover:border-gray-500'
+                } hover:scale-105 transform`}
               >
                 {editingState.isEditMode ? 'Exit Edit Mode' : 'Edit Drawing'}
               </button>
@@ -908,14 +910,14 @@ const SynthWavePage = () => {
               <button
                 onClick={playCurrentDrawing}
                 disabled={waveformPoints.length === 0 || isPlaying}
-                className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-green-500"
+                className="px-4 py-2 bg-green-600 text-white rounded-lg transition-all duration-200 border border-green-400 hover:bg-green-500 hover:scale-105 transform shadow-lg shadow-green-500/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:shadow-none"
               >
                 Play Drawing
               </button>
               
               <button
                 onClick={clearDrawing}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500"
+                className="px-4 py-2 bg-red-600 text-white rounded-lg transition-all duration-200 border border-red-400 hover:bg-red-500 hover:scale-105 transform shadow-lg shadow-red-500/20"
               >
                 Clear Drawing
               </button>
@@ -995,7 +997,7 @@ const SynthWavePage = () => {
           }}
           width={800}
           height={400}
-          className={`w-full h-full border border-gray-700 rounded ${
+          className={`w-full h-full border-2 border-gray-700 rounded-xl transition-colors duration-200 shadow-lg ${
             editingState.isEditMode 
               ? 'cursor-pointer bg-slate-900' 
               : 'cursor-crosshair bg-slate-800'
@@ -1117,7 +1119,7 @@ const SynthWavePage = () => {
             {[0, 1, 2].map(track => (
               <div
                 key={track}
-                className="flex h-16 bg-gray-100 dark:bg-gray-800 rounded mb-2 relative"
+                className="flex h-16 bg-gray-100 dark:bg-gray-800 rounded-lg mb-2 relative border border-gray-700 transition-all duration-200 hover:border-gray-600 shadow-md"
                 onDragOver={(e) => handleTimelineDragOver(e, track)}
               >
                 {/* Playhead line */}

@@ -81,6 +81,10 @@ const SynthWavePage = () => {
   const timelineRef = useRef<HTMLDivElement>(null)
   const playheadRef = useRef<number>(0)
   const animationFrameRef = useRef<number>()
+  const analyzerRef = useRef<Tone.Analyser>()
+  const [zoomLevel, setZoomLevel] = useState(1)
+  const [showSpectrum, setShowSpectrum] = useState(false)
+  const [selectedVisualization, setSelectedVisualization] = useState<'waveform' | 'spectrum'>('waveform')
 
   // ============= Core State =============
   const [synth, setSynth] = useState<Tone.Synth | null>(null)
@@ -128,7 +132,7 @@ const SynthWavePage = () => {
   const PIXELS_PER_SECOND = 100
 
   useEffect(() => {
-    // Initialize Tone.js with effects chain
+    // Initialize Tone.js with effects chain and analyzer
     const reverb = new Tone.Reverb({ decay: 1.5, wet: effects.reverb }).toDestination()
     const distortion = new Tone.Distortion(effects.distortion).connect(reverb)
     const newSynth = new Tone.Synth({
@@ -136,6 +140,7 @@ const SynthWavePage = () => {
         type: selectedWaveform === 'custom' ? 'sine' : selectedWaveform
       }
     }).connect(distortion)
+    analyzerRef.current = new Tone.Analyser('waveform', 256).connect(distortion)
 
     setSynth(newSynth)
 
@@ -143,6 +148,7 @@ const SynthWavePage = () => {
       newSynth.dispose()
       reverb.dispose()
       distortion.dispose()
+      analyzerRef.current?.dispose()
     }
   }, [selectedWaveform, effects])
 
@@ -154,19 +160,19 @@ const SynthWavePage = () => {
    */
   const drawWaveform = (ctx: CanvasRenderingContext2D, points: WaveformPoint[], hoveredSegment: LineSegment | null = null) => {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
-    
+
     let currentLine: WaveformPoint[] = []
     let gapHandles: { x: number; y: number; isSelected: boolean; pointIndex: number }[] = []
-    
+
     points.forEach((point, index) => {
       if (point.isNewLine || index === 0) {
         if (currentLine.length > 0) {
-          const isHovered = hoveredSegment && 
-            index > hoveredSegment.startIndex && 
+          const isHovered = hoveredSegment &&
+            index > hoveredSegment.startIndex &&
             index <= hoveredSegment.endIndex + 1
-          
+
           drawLine(ctx, currentLine, isHovered ?? false)
-          
+
           // Store gap handle info for later drawing
           const lastPoint = currentLine[currentLine.length - 1]
           if (lastPoint.gapDuration) {
@@ -183,12 +189,12 @@ const SynthWavePage = () => {
         currentLine.push(point)
       }
     })
-    
+
     if (currentLine.length > 0) {
-      const isHovered = hoveredSegment && 
+      const isHovered = hoveredSegment &&
         hoveredSegment.endIndex === points.length - 1
       drawLine(ctx, currentLine, isHovered ?? false)
-      
+
       // Store last gap handle if needed
       const lastPoint = currentLine[currentLine.length - 1]
       if (lastPoint.gapDuration) {
@@ -226,11 +232,11 @@ const SynthWavePage = () => {
     // Draw the main line
     ctx.beginPath()
     ctx.moveTo(points[0].x, points[0].y)
-    
+
     for (let i = 1; i < points.length; i++) {
       ctx.lineTo(points[i].x, points[i].y)
     }
-    
+
     ctx.lineWidth = isHovered ? 3 : 2
     ctx.strokeStyle = isHovered ? '#4CAF50' : '#2196F3'
     ctx.stroke()
@@ -245,7 +251,7 @@ const SynthWavePage = () => {
         if (baseGapWidth > MAX_GAP_WIDTH) {
           displayWidth = MAX_GAP_WIDTH
         }
-        
+
         // Draw gap indicator (dotted line)
         ctx.beginPath()
         ctx.setLineDash([5, 5])
@@ -272,7 +278,7 @@ const SynthWavePage = () => {
     const rect = canvas.getBoundingClientRect()
     const scaleX = canvas.width / rect.width
     const scaleY = canvas.height / rect.height
-    
+
     // Scale the input coordinates
     const scaledX = x * scaleX
     const scaledY = y * scaleY
@@ -282,7 +288,7 @@ const SynthWavePage = () => {
 
     for (let i = 0; i < waveformPoints.length; i++) {
       const point = waveformPoints[i]
-      
+
       if (point.isNewLine && currentSegment.length > 0) {
         if (isClickNearLine(scaledX, scaledY, currentSegment)) {
           return {
@@ -361,13 +367,13 @@ const SynthWavePage = () => {
     const y = e.clientY - rect.top
 
     const segment = findLineSegment(x, y)
-    
+
     if (segment) {
       setEditingState(prev => ({
         ...prev,
         hoveredSegment: segment
       }))
-      
+
       const ctx = canvas.getContext('2d')
       if (ctx) {
         drawWaveform(ctx, waveformPoints, segment)
@@ -377,7 +383,7 @@ const SynthWavePage = () => {
         ...prev,
         hoveredSegment: null
       }))
-      
+
       const ctx = canvas.getContext('2d')
       if (ctx) {
         drawWaveform(ctx, waveformPoints)
@@ -432,10 +438,10 @@ const SynthWavePage = () => {
   const smoothLine = (points: WaveformPoint[]): WaveformPoint[] => {
     return points.map((point, i) => {
       if (i === 0 || i === points.length - 1) return point
-      
+
       const prev = points[i - 1]
       const next = points[i + 1]
-      
+
       return {
         ...point,
         x: point.x,  // Keep x the same to maintain timing
@@ -446,7 +452,7 @@ const SynthWavePage = () => {
 
   const stretchLine = (points: WaveformPoint[], factor: number): WaveformPoint[] => {
     const centerY = points.reduce((sum, p) => sum + p.y, 0) / points.length
-    
+
     return points.map(point => ({
       ...point,
       y: centerY + (point.y - centerY) * factor
@@ -467,7 +473,7 @@ const SynthWavePage = () => {
     const { startIndex, endIndex } = editingState.selectedSegment
     const newPoints = [...waveformPoints]
     const segmentPoints = newPoints.slice(startIndex, endIndex + 1)
-    
+
     let modifiedPoints: WaveformPoint[]
     switch (effect) {
       case 'smooth':
@@ -480,10 +486,10 @@ const SynthWavePage = () => {
         modifiedPoints = applyArpeggio(segmentPoints)
         break
     }
-    
+
     newPoints.splice(startIndex, endIndex - startIndex + 1, ...modifiedPoints)
     setWaveformPoints(newPoints)
-    
+
     const ctx = canvasRef.current?.getContext('2d')
     if (ctx) {
       drawWaveform(ctx, newPoints, editingState.hoveredSegment)
@@ -497,7 +503,7 @@ const SynthWavePage = () => {
     const rect = canvas.getBoundingClientRect()
     const scaleX = canvas.width / rect.width
     const scaleY = canvas.height / rect.height
-    
+
     return {
       x: (e.clientX - rect.left) * scaleX,
       y: (e.clientY - rect.top) * scaleY
@@ -534,7 +540,7 @@ const SynthWavePage = () => {
 
     setWaveformPoints(prev => [...prev, newPoint])
     setLastDrawTime(currentTime)
-    
+
     if (synth) {
       const frequency = mapToFrequency(coords.y, canvas.height)
       synth.triggerAttack(frequency)
@@ -625,7 +631,7 @@ const SynthWavePage = () => {
     points.forEach((point, index) => {
       const time = now + point.time
       const frequency = mapToFrequency(point.y, canvasRef.current?.height || 400)
-      
+
       if (point.isNewLine) {
         // Release the previous line's sound
         if (index > 0) {
@@ -635,7 +641,7 @@ const SynthWavePage = () => {
             synth.triggerRelease(time - prevPoint.gapDuration)
           }
         }
-        
+
         // Start new note after any gap
         synth.triggerAttack(frequency, time)
         currentLineStartIndex = index
@@ -646,7 +652,7 @@ const SynthWavePage = () => {
 
       // If this is the last point or the next point starts a new line,
       // schedule the release for this line
-      if (index === points.length - 1 || 
+      if (index === points.length - 1 ||
           (index + 1 < points.length && points[index + 1].isNewLine)) {
         const nextPoint = points[index + 1]
         if (nextPoint && nextPoint.gapDuration) {
@@ -688,8 +694,8 @@ const SynthWavePage = () => {
 
       // Update active events
       const currentActive = timelineEvents
-        .filter(event => 
-          currentTime >= event.startTime && 
+        .filter(event =>
+          currentTime >= event.startTime &&
           currentTime <= event.startTime + event.duration
         )
         .map(event => event.id)
@@ -741,7 +747,7 @@ const SynthWavePage = () => {
     const newStartTime = Math.max(0, x / PIXELS_PER_SECOND)
 
     // Update event position
-    setTimelineEvents(prev => prev.map(ev => 
+    setTimelineEvents(prev => prev.map(ev =>
       ev.id === draggingEvent.id
         ? { ...ev, startTime: newStartTime, track }
         : ev
@@ -779,12 +785,12 @@ const SynthWavePage = () => {
       // In edit mode, check if clicking a gap handle first
       const gapPoint = waveformPoints.findIndex((point) => {
         if (!point.gapDuration) return false
-        
+
         const handleX = point.x + (point.gapDuration * 50)
         const handleY = point.y
-        
+
         const distance = Math.sqrt(
-          Math.pow(coords.x - handleX, 2) + 
+          Math.pow(coords.x - handleX, 2) +
           Math.pow(coords.y - handleY, 2)
         )
         return distance < 10
@@ -819,7 +825,7 @@ const SynthWavePage = () => {
     const x = e.clientX - rect.left
     const MAX_GAP_WIDTH = 150
     const PIXELS_PER_SECOND = 50
-    
+
     // Clear any existing tooltip when adjusting gaps
     setEditingState(prev => ({
       ...prev,
@@ -840,15 +846,15 @@ const SynthWavePage = () => {
     } else {
       newGapDuration = dragDistance / PIXELS_PER_SECOND
     }
-    
+
     const newPoints = [...waveformPoints]
     newPoints[selectedGap] = {
       ...newPoints[selectedGap],
       gapDuration: newGapDuration
     }
-    
+
     setWaveformPoints(newPoints)
-    
+
     const ctx = canvasRef.current?.getContext('2d')
     if (ctx) {
       drawWaveform(ctx, newPoints, editingState.hoveredSegment)
@@ -857,7 +863,7 @@ const SynthWavePage = () => {
 
   const playCurrentDrawing = () => {
     if (waveformPoints.length === 0) return
-    
+
     // Calculate total duration from the last point's time
     const duration = waveformPoints[waveformPoints.length - 1].time
     playSound(waveformPoints)
@@ -865,16 +871,16 @@ const SynthWavePage = () => {
 
   const handleGapDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!editingState.selectedSegment) return
-    
+
     const newGapDuration = parseFloat(e.target.value)
     const newPoints = [...waveformPoints]
     const lastPointIndex = editingState.selectedSegment.endIndex
-    
+
     newPoints[lastPointIndex] = {
       ...newPoints[lastPointIndex],
       gapDuration: newGapDuration
     }
-    
+
     setWaveformPoints(newPoints)
     const ctx = canvasRef.current?.getContext('2d')
     if (ctx) {
@@ -889,6 +895,21 @@ const SynthWavePage = () => {
     }));
   };
 
+  const exportToMIDI = (points: WaveformPoint[]) => {
+    //Implementation for MIDI export (simplified example)
+    const midiData = points.map(point => ({
+      note: Math.round(mapToFrequency(point.y, 400)),
+      time: point.time
+    }))
+    const blob = new Blob([JSON.stringify(midiData)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'synthwave.json' // Placeholder for actual MIDI export
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-900">
       <div className="sticky top-0 bg-gray-900 z-10 border-b border-gray-700">
@@ -899,14 +920,14 @@ const SynthWavePage = () => {
               <button
                 onClick={() => setEditingState(prev => ({ ...prev, isEditMode: !prev.isEditMode }))}
                 className={`px-4 py-2 rounded-lg transition-all duration-200 border ${
-                  editingState.isEditMode 
-                    ? 'bg-blue-600 text-white border-blue-400 hover:bg-blue-500 shadow-lg shadow-blue-500/20' 
+                  editingState.isEditMode
+                    ? 'bg-blue-600 text-white border-blue-400 hover:bg-blue-500 shadow-lg shadow-blue-500/20'
                     : 'bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600 hover:border-gray-500'
                 } hover:scale-105 transform`}
               >
                 {editingState.isEditMode ? 'Exit Edit Mode' : 'Edit Drawing'}
               </button>
-              
+
               <button
                 onClick={playCurrentDrawing}
                 disabled={waveformPoints.length === 0 || isPlaying}
@@ -914,7 +935,7 @@ const SynthWavePage = () => {
               >
                 Play Drawing
               </button>
-              
+
               <button
                 onClick={clearDrawing}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg transition-all duration-200 border border-red-400 hover:bg-red-500 hover:scale-105 transform shadow-lg shadow-red-500/20"
@@ -924,6 +945,34 @@ const SynthWavePage = () => {
             </div>
 
             <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setZoomLevel(prev => Math.min(prev + 0.5, 4))}
+                  className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
+                >
+                  Zoom In
+                </button>
+                <button
+                  onClick={() => setZoomLevel(prev => Math.max(prev - 0.5, 0.5))}
+                  className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
+                >
+                  Zoom Out
+                </button>
+                <select
+                  value={selectedVisualization}
+                  onChange={(e) => setSelectedVisualization(e.target.value as 'waveform' | 'spectrum')}
+                  className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
+                >
+                  <option value="waveform">Waveform</option>
+                  <option value="spectrum">Spectrum</option>
+                </select>
+                <button
+                  onClick={() => exportToMIDI(waveformPoints)}
+                  className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-500"
+                >
+                  Export MIDI
+                </button>
+              </div>
               <input
                 type="text"
                 value={currentSoundName}
@@ -944,8 +993,8 @@ const SynthWavePage = () => {
 
         {/* Collapsible config section */}
         <div className="p-4">
-          <button 
-            onClick={() => setIsConfigExpanded(!isConfigExpanded)} 
+          <button
+            onClick={() => setIsConfigExpanded(!isConfigExpanded)}
             className="flex items-center gap-2 text-white mb-4 hover:text-blue-400 transition-colors"
           >
             <span className={`transform transition-transform ${isConfigExpanded ? 'rotate-90' : ''}`}>
@@ -953,7 +1002,7 @@ const SynthWavePage = () => {
             </span>
             Configuration
           </button>
-          
+
           {isConfigExpanded && (
             <div className="space-y-4">
               <WaveConfigPanel
@@ -998,12 +1047,12 @@ const SynthWavePage = () => {
           width={800}
           height={400}
           className={`w-full h-full border-2 border-gray-700 rounded-xl transition-colors duration-200 shadow-lg ${
-            editingState.isEditMode 
-              ? 'cursor-pointer bg-slate-900' 
+            editingState.isEditMode
+              ? 'cursor-pointer bg-slate-900'
               : 'cursor-crosshair bg-slate-800'
           }`}
         />
-        
+
         {editingState.tooltipPosition && editingState.selectedLineSettings && (
           <Tooltip
             position={editingState.tooltipPosition}
@@ -1019,16 +1068,16 @@ const SynthWavePage = () => {
               currentSettings={editingState.selectedLineSettings}
               onWaveformChange={(waveform) => updateLineSettings({ waveform })}
               onVolumeChange={(volume) => updateLineSettings({ volume })}
-              onFrequencyRangeChange={(min, max) => 
+              onFrequencyRangeChange={(min, max) =>
                 updateLineSettings({ frequencyRange: { min, max } })}
-              onADSRChange={(attack, decay, sustain, release) => 
+              onADSRChange={(attack, decay, sustain, release) =>
                 updateLineSettings({ adsr: { attack, decay, sustain, release } })}
-              onVibratoChange={(rate, depth) => 
+              onVibratoChange={(rate, depth) =>
                 updateLineSettings({ vibrato: { rate, depth } })}
             />
           </Tooltip>
         )}
-        
+
         {/* Save Sound Controls */}
         <div className="flex space-x-4 items-center">
           <input
@@ -1103,7 +1152,7 @@ const SynthWavePage = () => {
             {/* Playhead */}
             <div
               className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
-              style={{ 
+              style={{
                 left: `${playheadPosition * PIXELS_PER_SECOND}px`,
                 transform: 'translateX(-50%)'
               }}
@@ -1111,7 +1160,7 @@ const SynthWavePage = () => {
           </div>
 
           {/* Timeline tracks */}
-          <div 
+          <div
             ref={timelineRef}
             className="relative w-full overflow-x-auto"
             style={{ minHeight: '200px' }}
@@ -1125,7 +1174,7 @@ const SynthWavePage = () => {
                 {/* Playhead line */}
                 <div
                   className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
-                  style={{ 
+                  style={{
                     left: `${playheadPosition * PIXELS_PER_SECOND}px`,
                     transform: 'translateX(-50%)'
                   }}
@@ -1141,8 +1190,8 @@ const SynthWavePage = () => {
                         onDragStart={() => handleDragStart(event)}
                         onDragEnd={handleDragEnd}
                         className={`absolute px-2 py-1 rounded cursor-move transition-all
-                          ${activeEvents.includes(event.id) 
-                            ? 'bg-purple-400 dark:bg-purple-500' 
+                          ${activeEvents.includes(event.id)
+                            ? 'bg-purple-400 dark:bg-purple-500'
                             : 'bg-purple-200 dark:bg-purple-700'
                           } hover:bg-purple-300 dark:hover:bg-purple-600`}
                         style={{

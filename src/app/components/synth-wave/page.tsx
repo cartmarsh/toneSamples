@@ -646,33 +646,47 @@ const SynthWavePage = () => {
     setCurrentSoundName('')
   }
 
-  const playSound = async (points: WaveformPoint[], duration = 1, delayStart = 0) => {
+  const playSound = async (points: WaveformPoint[], duration?: number, delayStart = 0) => {
     if (!layeredSynths.main || !layeredSynths.sub || !layeredSynths.pad) return
 
+    // Calculate actual duration from points
+    const soundDuration = duration || (points.length > 0 
+      ? points[points.length - 1].time - points[0].time + 0.5 // Add 0.5s for release
+      : 1)
+
     const now = Tone.now() + delayStart
-    points.forEach((point, index) => {
+    let lastTime = now
+
+    // Sort points by time to ensure proper ordering
+    const sortedPoints = [...points].sort((a, b) => a.time - b.time)
+
+    sortedPoints.forEach((point, index) => {
       const mainFreq = mapToFrequency(point.y, canvasRef.current?.height || 400)
-      const subFreq = mainFreq * 0.5 // One octave lower
-      const padFreq = mainFreq * 1.5 // Perfect fifth higher
-      const time = now + point.time
+      const subFreq = mainFreq * 0.5
+      const padFreq = mainFreq * 1.5
+      const time = now + (point.time - sortedPoints[0].time) // Normalize time relative to first point
 
-      if (point.isNewLine) {
+      if (time < lastTime) return // Skip if time goes backwards
+      lastTime = time
+
+      if (point.isNewLine || index === 0) {
         layeredSynths.main.triggerAttack(mainFreq, time)
-        layeredSynths.sub.triggerAttack(subFreq, time + 0.05)
-        layeredSynths.pad.triggerAttack(padFreq, time + 0.1)
+        layeredSynths.sub.triggerAttack(subFreq, time + 0.02)
+        layeredSynths.pad.triggerAttack(padFreq, time + 0.04)
       } else {
-        layeredSynths.main.frequency.setValueAtTime(mainFreq, time)
-        layeredSynths.sub.frequency.setValueAtTime(subFreq, time)
-        layeredSynths.pad.frequency.setValueAtTime(padFreq, time)
-      }
-
-      if (index === points.length - 1) {
-        const releaseTime = time + 0.05
-        layeredSynths.main.triggerRelease(releaseTime)
-        layeredSynths.sub.triggerRelease(releaseTime + 0.1)
-        layeredSynths.pad.triggerRelease(releaseTime + 0.2)
+        layeredSynths.main.frequency.linearRampToValueAtTime(mainFreq, time)
+        layeredSynths.sub.frequency.linearRampToValueAtTime(subFreq, time)
+        layeredSynths.pad.frequency.linearRampToValueAtTime(padFreq, time)
       }
     })
+
+    // Schedule release at the end of duration
+    const releaseTime = now + soundDuration - 0.3
+    layeredSynths.main.triggerRelease(releaseTime)
+    layeredSynths.sub.triggerRelease(releaseTime + 0.1)
+    layeredSynths.pad.triggerRelease(releaseTime + 0.2)
+
+    return soundDuration
   }
 
   const playSavedSound = (soundId: number) => {
@@ -681,12 +695,23 @@ const SynthWavePage = () => {
     playSound(sound.points)
   }
 
-  const addToTimeline = (soundId: number, track: number) => {
+  const addToTimeline = async (soundId: number, track: number) => {
+    const sound = savedSounds.find(s => s.id === soundId)
+    if (!sound) return
+
+    // Calculate actual duration from the sound's points
+    const duration = sound.points.length > 0 
+      ? sound.points[sound.points.length - 1].time - sound.points[0].time + 0.5
+      : 1
+
+    // Find a suitable start time (after the last event)
+    const lastEventEnd = Math.max(0, ...timelineEvents.map(e => e.startTime + e.duration))
+    
     const newEvent: TimelineEvent = {
       id: `event-${Date.now()}-${Math.random()}`,
       soundId,
-      startTime: 0,
-      duration: 1,
+      startTime: lastEventEnd,
+      duration,
       track
     }
     setTimelineEvents(prev => [...prev, newEvent])

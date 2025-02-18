@@ -1079,6 +1079,100 @@ const SynthWavePage = () => {
           </Tooltip>
         )}
       </div>
+
+      {/* Save Sound Panel */}
+      <div className="p-4 bg-gray-800 border-t border-gray-700">
+        <div className="flex items-center gap-4">
+          <input
+            type="text"
+            value={currentSoundName}
+            onChange={(e) => setCurrentSoundName(e.target.value)}
+            placeholder="Enter sound name"
+            className="px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"
+          />
+          <button
+            onClick={saveCurrentSound}
+            disabled={!currentSoundName || waveformPoints.length === 0}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50"
+          >
+            Save Sound
+          </button>
+        </div>
+      </div>
+
+      {/* Saved Sounds Grid */}
+      <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {savedSounds.map((sound) => (
+          <div
+            key={sound.id}
+            className="p-4 bg-gray-800 rounded-lg border border-gray-700"
+          >
+            <h3 className="text-white font-medium mb-2">{sound.name}</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => playSavedSound(sound.id)}
+                className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-500"
+              >
+                Play
+              </button>
+              <button
+                onClick={() => addToTimeline(sound.id, 0)}
+                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-500"
+              >
+                Add to Timeline
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Timeline */}
+      <div className="p-4 bg-gray-800 border-t border-gray-700">
+        <div className="flex items-center gap-4 mb-4">
+          <button
+            onClick={playTimeline}
+            disabled={timelineEvents.length === 0 || isPlaying}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg disabled:opacity-50"
+          >
+            Play Timeline
+          </button>
+          <button
+            onClick={() => setTimelineEvents([])}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg"
+          >
+            Clear Timeline
+          </button>
+        </div>
+
+        <div
+          ref={timelineRef}
+          className="relative h-48 bg-gray-900 rounded-lg overflow-hidden"
+          onDragOver={(e) => handleTimelineDragOver(e, 0)}
+          onDrop={() => handleDragEnd()}
+        >
+          {timelineEvents.map((event) => (
+            <div
+              key={event.id}
+              draggable
+              onDragStart={() => handleDragStart(event)}
+              className={`absolute top-0 h-12 bg-blue-500 rounded cursor-move transition-opacity ${
+                activeEvents.includes(event.id) ? 'opacity-100' : 'opacity-50'
+              }`}
+              style={{
+                left: `${event.startTime * PIXELS_PER_SECOND}px`,
+                width: `${event.duration * PIXELS_PER_SECOND}px`,
+                top: `${event.track * 48}px`,
+              }}
+            >
+              {savedSounds.find((s) => s.id === event.soundId)?.name}
+            </div>
+          ))}
+          <div
+            className="absolute top-0 h-full w-1 bg-white"
+            style={{ left: `${playheadPosition * PIXELS_PER_SECOND}px` }}
+          />
+        </div>
+      </div>
     </div>
   )
 }

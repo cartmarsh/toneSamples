@@ -749,6 +749,7 @@ const SynthWavePage = () => {
   }
 
   const playTimeline = async () => {
+    await Tone.start()
     setIsPlaying(true)
     const startTime = Tone.now()
     updatePlayhead(startTime)
@@ -761,28 +762,30 @@ const SynthWavePage = () => {
       const sound = savedSounds.find(s => s.id === event.soundId)
       if (!sound) return
 
-      // Create a fresh sequence for each sound
-      const sequence = new Tone.Sequence((time, note) => {
-        if (note) {
-          const { mainFreq, subFreq, padFreq } = note
-          layeredSynths.main.triggerAttackRelease(mainFreq, '16n', time)
-          layeredSynths.sub.triggerAttackRelease(subFreq, '16n', time + 0.02)
-          layeredSynths.pad.triggerAttackRelease(padFreq, '16n', time + 0.04)
+      const eventStartTime = startTime + event.startTime
+      sound.points.forEach((point, index) => {
+        const pointTime = eventStartTime + point.time
+        const mainFreq = mapToFrequency(point.y, canvasRef.current?.height || 400)
+        const subFreq = mainFreq * 0.5
+        const padFreq = mainFreq * 1.5
+
+        if (point.isNewLine || index === 0) {
+          layeredSynths.main?.triggerAttack(mainFreq, pointTime)
+          layeredSynths.sub?.triggerAttack(subFreq, pointTime + 0.02)
+          layeredSynths.pad?.triggerAttack(padFreq, pointTime + 0.04)
+        } else {
+          layeredSynths.main?.frequency.setValueAtTime(mainFreq, pointTime)
+          layeredSynths.sub?.frequency.setValueAtTime(subFreq, pointTime)
+          layeredSynths.pad?.frequency.setValueAtTime(padFreq, pointTime)
         }
-      }, sound.points.map(point => ({
-        mainFreq: mapToFrequency(point.y, canvasRef.current?.height || 400),
-        subFreq: mapToFrequency(point.y, canvasRef.current?.height || 400) * 0.5,
-        padFreq: mapToFrequency(point.y, canvasRef.current?.height || 400) * 1.5
-      })), '16n').start(startTime + event.startTime)
+      })
 
-      // Clean up sequence after its duration
-      Tone.Transport.scheduleOnce(() => {
-        sequence.dispose()
-      }, `+${event.startTime + event.duration}`)
+      // Schedule release
+      const releaseTime = eventStartTime + event.duration - 0.1
+      layeredSynths.main?.triggerRelease(releaseTime)
+      layeredSynths.sub?.triggerRelease(releaseTime + 0.02)
+      layeredSynths.pad?.triggerRelease(releaseTime + 0.04)
     })
-
-    // Start transport
-    Tone.Transport.start()
 
     const duration = Math.max(...timelineEvents.map(e => e.startTime + e.duration))
     setTimeout(() => {

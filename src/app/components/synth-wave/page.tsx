@@ -651,20 +651,22 @@ const SynthWavePage = () => {
 
     // Calculate actual duration from points
     const soundDuration = duration || (points.length > 0 
-      ? points[points.length - 1].time - points[0].time + 0.5 // Add 0.5s for release
+      ? points[points.length - 1].time - points[0].time + 0.5 
       : 1)
 
-    const now = Tone.now() + delayStart
-    let lastTime = now
+    const baseTime = Tone.now() + delayStart
+    let lastTime = -Infinity
 
     // Sort points by time to ensure proper ordering
     const sortedPoints = [...points].sort((a, b) => a.time - b.time)
+    const startTime = sortedPoints[0].time
 
+    // Schedule all events relative to the start time
     sortedPoints.forEach((point, index) => {
       const mainFreq = mapToFrequency(point.y, canvasRef.current?.height || 400)
       const subFreq = mainFreq * 0.5
       const padFreq = mainFreq * 1.5
-      const time = now + (point.time - sortedPoints[0].time) // Normalize time relative to first point
+      const time = baseTime + (point.time - startTime) // Normalize time relative to first point
 
       if (time < lastTime) return // Skip if time goes backwards
       lastTime = time
@@ -681,7 +683,7 @@ const SynthWavePage = () => {
     })
 
     // Schedule release at the end of duration
-    const releaseTime = now + soundDuration - 0.3
+    const releaseTime = baseTime + soundDuration - 0.3
     layeredSynths.main.triggerRelease(releaseTime)
     layeredSynths.sub.triggerRelease(releaseTime + 0.1)
     layeredSynths.pad.triggerRelease(releaseTime + 0.2)
@@ -706,7 +708,7 @@ const SynthWavePage = () => {
 
     // Find a suitable start time (after the last event)
     const lastEventEnd = Math.max(0, ...timelineEvents.map(e => e.startTime + e.duration))
-    
+
     const newEvent: TimelineEvent = {
       id: `event-${Date.now()}-${Math.random()}`,
       soundId,

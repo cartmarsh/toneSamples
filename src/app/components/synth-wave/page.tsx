@@ -99,6 +99,8 @@ const SynthWavePage = () => {
     reverb: 0,
     distortion: 0
   })
+  const [analyzer, setAnalyzer] = useState<Tone.Analyser | null>(null)
+  const [activeColor, setActiveColor] = useState('#00ff9d')
 
   // ============= Drawing and Interaction State =============
   const [isDrawing, setIsDrawing] = useState(false)
@@ -155,7 +157,9 @@ const SynthWavePage = () => {
         type: selectedWaveform === 'custom' ? 'sine' : selectedWaveform
       }
     }).connect(distortion)
-    analyzerRef.current = new Tone.Analyser('waveform', 256).connect(distortion)
+    const analyser = new Tone.Analyser('waveform', 256).connect(distortion)
+    analyzerRef.current = analyser;
+    setAnalyzer(analyser);
 
     setLayeredSynths({ main: mainSynth, sub: subSynth, pad: padSynth })
 
@@ -924,8 +928,7 @@ const SynthWavePage = () => {
                 className={`px-4 py-2 rounded-lg transition-all duration-200 border ${
                   editingState.isEditMode
                     ? 'bg-blue-600 text-white border-blue-400 hover:bg-blue-500 shadow-lg shadow-blue-500/20'
-                    : 'bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600 hover:border-gray-500'
-                } hover:scale-105 transform`}
+                    : 'bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600 hover:border-gray-500} hover:scale-105 transform`}
               >
                 {editingState.isEditMode ? 'Exit Edit Mode' : 'Edit Drawing'}
               </button>
@@ -1015,6 +1018,15 @@ const SynthWavePage = () => {
                 drawingConfig={drawingConfig}
                 onDrawingConfigChange={handleDrawingConfigChange}
               />
+              <div className="flex items-center gap-4">
+                <label className="text-white">Visualization Color:</label>
+                <input
+                  type="color"
+                  value={activeColor}
+                  onChange={(e) => setActiveColor(e.target.value)}
+                  className="w-12 h-8 rounded cursor-pointer"
+                />
+              </div>
             </div>
           )}
         </div>

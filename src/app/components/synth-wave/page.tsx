@@ -88,6 +88,11 @@ const SynthWavePage = () => {
 
   // ============= Core State =============
   const [synth, setSynth] = useState<Tone.Synth | null>(null)
+  const [layeredSynths, setLayeredSynths] = useState({
+    main: null,
+    sub: null,
+    pad: null
+  })
   const [waveformPoints, setWaveformPoints] = useState<WaveformPoint[]>([])
   const [selectedWaveform, setSelectedWaveform] = useState<WaveformType>('sine')
   const [effects, setEffects] = useState({
@@ -135,17 +140,29 @@ const SynthWavePage = () => {
     // Initialize Tone.js with effects chain and analyzer
     const reverb = new Tone.Reverb({ decay: 1.5, wet: effects.reverb }).toDestination()
     const distortion = new Tone.Distortion(effects.distortion).connect(reverb)
-    const newSynth = new Tone.Synth({
+    const mainSynth = new Tone.Synth({
+      oscillator: {
+        type: selectedWaveform === 'custom' ? 'sine' : selectedWaveform
+      }
+    }).connect(distortion)
+    const subSynth = new Tone.Synth({
+      oscillator: {
+        type: selectedWaveform === 'custom' ? 'sine' : selectedWaveform
+      }
+    }).connect(distortion)
+    const padSynth = new Tone.Synth({
       oscillator: {
         type: selectedWaveform === 'custom' ? 'sine' : selectedWaveform
       }
     }).connect(distortion)
     analyzerRef.current = new Tone.Analyser('waveform', 256).connect(distortion)
 
-    setSynth(newSynth)
+    setLayeredSynths({ main: mainSynth, sub: subSynth, pad: padSynth })
 
     return () => {
-      newSynth.dispose()
+      mainSynth.dispose()
+      subSynth.dispose()
+      padSynth.dispose()
       reverb.dispose()
       distortion.dispose()
       analyzerRef.current?.dispose()
@@ -541,14 +558,14 @@ const SynthWavePage = () => {
     setWaveformPoints(prev => [...prev, newPoint])
     setLastDrawTime(currentTime)
 
-    if (synth) {
+    if (layeredSynths.main) {
       const frequency = mapToFrequency(coords.y, canvas.height)
-      synth.triggerAttack(frequency)
+      layeredSynths.main.triggerAttack(frequency)
     }
   }
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !canvasRef.current || !synth || !lastDrawTime) return
+    if (!isDrawing || !canvasRef.current || !layeredSynths.main || !lastDrawTime) return
 
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
@@ -568,10 +585,10 @@ const SynthWavePage = () => {
     }
 
     if (newPoint.isNewLine) {
-      synth.triggerRelease('+0')
-      synth.triggerAttack(mapToFrequency(coords.y, canvas.height))
+      layeredSynths.main.triggerRelease('+0')
+      layeredSynths.main.triggerAttack(mapToFrequency(coords.y, canvas.height))
     } else {
-      synth.frequency.setValueAtTime(mapToFrequency(coords.y, canvas.height), '+0')
+      layeredSynths.main.frequency.setValueAtTime(mapToFrequency(coords.y, canvas.height), '+0')
     }
 
     setWaveformPoints(prev => [...prev, newPoint])
@@ -581,7 +598,7 @@ const SynthWavePage = () => {
 
   const stopDrawing = () => {
     setIsDrawing(false)
-    synth?.triggerRelease()
+    layeredSynths.main?.triggerRelease()
     setLastLineEndTime(Tone.now())
   }
 
@@ -591,8 +608,10 @@ const SynthWavePage = () => {
 
   const handleWaveformChange = (type: WaveformType) => {
     setSelectedWaveform(type)
-    if (synth) {
-      synth.oscillator.type = type === 'custom' ? 'sine' : type
+    if (layeredSynths.main) {
+      layeredSynths.main.oscillator.type = type === 'custom' ? 'sine' : type
+      layeredSynths.sub.oscillator.type = type === 'custom' ? 'sine' : type
+      layeredSynths.pad.oscillator.type = type === 'custom' ? 'sine' : type
     }
   }
 
@@ -623,49 +642,32 @@ const SynthWavePage = () => {
   }
 
   const playSound = async (points: WaveformPoint[], duration = 1, delayStart = 0) => {
-    if (!synth) return
+    if (!layeredSynths.main || !layeredSynths.sub || !layeredSynths.pad) return
 
     const now = Tone.now() + delayStart
-    let currentLineStartIndex = 0
-
     points.forEach((point, index) => {
+      const mainFreq = mapToFrequency(point.y, canvasRef.current?.height || 400)
+      const subFreq = mainFreq * 0.5 // One octave lower
+      const padFreq = mainFreq * 1.5 // Perfect fifth higher
       const time = now + point.time
-      const frequency = mapToFrequency(point.y, canvasRef.current?.height || 400)
 
       if (point.isNewLine) {
-        // Release the previous line's sound
-        if (index > 0) {
-          const prevPoint = points[index - 1]
-          if (prevPoint.gapDuration && prevPoint.gapDuration > 0) {
-            // Release at the exact end of the line
-            synth.triggerRelease(time - prevPoint.gapDuration)
-          }
-        }
-
-        // Start new note after any gap
-        synth.triggerAttack(frequency, time)
-        currentLineStartIndex = index
+        layeredSynths.main.triggerAttack(mainFreq, time)
+        layeredSynths.sub.triggerAttack(subFreq, time + 0.05)
+        layeredSynths.pad.triggerAttack(padFreq, time + 0.1)
       } else {
-        // Continue the current note with new frequency
-        synth.frequency.setValueAtTime(frequency, time)
+        layeredSynths.main.frequency.setValueAtTime(mainFreq, time)
+        layeredSynths.sub.frequency.setValueAtTime(subFreq, time)
+        layeredSynths.pad.frequency.setValueAtTime(padFreq, time)
       }
 
-      // If this is the last point or the next point starts a new line,
-      // schedule the release for this line
-      if (index === points.length - 1 ||
-          (index + 1 < points.length && points[index + 1].isNewLine)) {
-        const nextPoint = points[index + 1]
-        if (nextPoint && nextPoint.gapDuration) {
-          // Release at the start of the gap
-          synth.triggerRelease(time)
-        }
+      if (index === points.length - 1) {
+        const releaseTime = time + 0.05
+        layeredSynths.main.triggerRelease(releaseTime)
+        layeredSynths.sub.triggerRelease(releaseTime + 0.1)
+        layeredSynths.pad.triggerRelease(releaseTime + 0.2)
       }
     })
-
-    // Ensure final release
-    const lastPoint = points[points.length - 1]
-    const finalTime = now + lastPoint.time + 0.05
-    synth.triggerRelease(finalTime)
   }
 
   const playSavedSound = (soundId: number) => {

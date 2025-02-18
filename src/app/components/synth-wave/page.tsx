@@ -753,18 +753,43 @@ const SynthWavePage = () => {
     const startTime = Tone.now()
     updatePlayhead(startTime)
 
-    timelineEvents.forEach(event => {
+    // Sort timeline events by start time
+    const sortedEvents = [...timelineEvents].sort((a, b) => a.startTime - b.startTime)
+
+    // Schedule each event
+    sortedEvents.forEach(event => {
       const sound = savedSounds.find(s => s.id === event.soundId)
       if (!sound) return
 
-      // Pass the event's start time as a delay
-      playSound(sound.points, event.duration, event.startTime)
+      // Create a fresh sequence for each sound
+      const sequence = new Tone.Sequence((time, note) => {
+        if (note) {
+          const { mainFreq, subFreq, padFreq } = note
+          layeredSynths.main.triggerAttackRelease(mainFreq, '16n', time)
+          layeredSynths.sub.triggerAttackRelease(subFreq, '16n', time + 0.02)
+          layeredSynths.pad.triggerAttackRelease(padFreq, '16n', time + 0.04)
+        }
+      }, sound.points.map(point => ({
+        mainFreq: mapToFrequency(point.y, canvasRef.current?.height || 400),
+        subFreq: mapToFrequency(point.y, canvasRef.current?.height || 400) * 0.5,
+        padFreq: mapToFrequency(point.y, canvasRef.current?.height || 400) * 1.5
+      })), '16n').start(startTime + event.startTime)
+
+      // Clean up sequence after its duration
+      Tone.Transport.scheduleOnce(() => {
+        sequence.dispose()
+      }, `+${event.startTime + event.duration}`)
     })
+
+    // Start transport
+    Tone.Transport.start()
 
     const duration = Math.max(...timelineEvents.map(e => e.startTime + e.duration))
     setTimeout(() => {
       setIsPlaying(false)
       stopPlayhead()
+      Tone.Transport.stop()
+      Tone.Transport.cancel()
     }, duration * 1000)
   }
 

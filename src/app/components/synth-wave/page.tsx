@@ -5,6 +5,7 @@ import * as Tone from 'tone'
 import Tooltip from '../tooltip/Tooltip'
 import SoundShapingTooltip from '../tooltip/SoundShapingTooltip'
 import WaveConfigPanel from './WaveConfigPanel'
+import RetroVisualizer from './RetroVisualizer'
 
 // ============= Type Definitions =============
 /**
@@ -919,7 +920,7 @@ const SynthWavePage = () => {
   return (
     <div className="flex flex-col min-h-screen bg-gray-900">
       <div className="sticky top-0 bg-gray-900 z-10 border-b border-gray-700">
-        {/* Always visible controls */}
+        {/* Controls section */}
         <div className="p-4 border-b border-gray-700">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
@@ -928,7 +929,8 @@ const SynthWavePage = () => {
                 className={`px-4 py-2 rounded-lg transition-all duration-200 border ${
                   editingState.isEditMode
                     ? 'bg-blue-600 text-white border-blue-400 hover:bg-blue-500 shadow-lg shadow-blue-500/20'
-                    : 'bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600 hover:border-gray-500} hover:scale-105 transform`}
+                    : 'bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600 hover:border-gray-500'
+                } hover:scale-105 transform`}
               >
                 {editingState.isEditMode ? 'Exit Edit Mode' : 'Edit Drawing'}
               </button>
@@ -950,53 +952,37 @@ const SynthWavePage = () => {
             </div>
 
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setZoomLevel(prev => Math.min(prev + 0.5, 4))}
-                  className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
-                >
-                  Zoom In
-                </button>
-                <button
-                  onClick={() => setZoomLevel(prev => Math.max(prev - 0.5, 0.5))}
-                  className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
-                >
-                  Zoom Out
-                </button>
-                <select
-                  value={selectedVisualization}
-                  onChange={(e) => setSelectedVisualization(e.target.value as 'waveform' | 'spectrum')}
-                  className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
-                >
-                  <option value="waveform">Waveform</option>
-                  <option value="spectrum">Spectrum</option>
-                </select>
-                <button
-                  onClick={() => exportToMIDI(waveformPoints)}
-                  className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-500"
-                >
-                  Export MIDI
-                </button>
-              </div>
-              <input
-                type="text"
-                value={currentSoundName}
-                onChange={(e) => setCurrentSoundName(e.target.value)}
-                placeholder="Sound name"
-                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded text-white placeholder-gray-500"
-              />
               <button
-                onClick={saveCurrentSound}
-                disabled={waveformPoints.length === 0 || !currentSoundName}
-                className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-500"
+                onClick={() => setZoomLevel(prev => Math.min(prev + 0.5, 4))}
+                className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
               >
-                Save
+                Zoom In
+              </button>
+              <button
+                onClick={() => setZoomLevel(prev => Math.max(prev - 0.5, 0.5))}
+                className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
+              >
+                Zoom Out
+              </button>
+              <select
+                value={selectedVisualization}
+                onChange={(e) => setSelectedVisualization(e.target.value as 'waveform' | 'spectrum')}
+                className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
+              >
+                <option value="waveform">Waveform</option>
+                <option value="spectrum">Spectrum</option>
+              </select>
+              <button
+                onClick={() => exportToMIDI(waveformPoints)}
+                className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-500"
+              >
+                Export MIDI
               </button>
             </div>
           </div>
         </div>
 
-        {/* Collapsible config section */}
+        {/* Config section */}
         <div className="p-4">
           <button
             onClick={() => setIsConfigExpanded(!isConfigExpanded)}
@@ -1012,7 +998,7 @@ const SynthWavePage = () => {
             <div className="space-y-4">
               <WaveConfigPanel
                 selectedWaveform={selectedWaveform}
-                onWaveformChange={setSelectedWaveform}
+                onWaveformChange={handleWaveformChange}
                 effects={effects}
                 onEffectChange={handleEffectChange}
                 drawingConfig={drawingConfig}
@@ -1067,16 +1053,17 @@ const SynthWavePage = () => {
           }`}
         />
 
+        <RetroVisualizer
+          analyzer={analyzer}
+          isPlaying={isPlaying}
+          activeColor={activeColor}
+        />
+
         {editingState.tooltipPosition && editingState.selectedLineSettings && (
           <Tooltip
             position={editingState.tooltipPosition}
             isVisible={true}
-            onClose={() => setEditingState(prev => ({
-              ...prev,
-              tooltipPosition: null,
-              selectedLineSettings: null,
-              selectedSegment: null
-            }))}
+            onClose={handleTooltipClose}
           >
             <SoundShapingTooltip
               currentSettings={editingState.selectedLineSettings}
@@ -1091,157 +1078,6 @@ const SynthWavePage = () => {
             />
           </Tooltip>
         )}
-
-        {/* Save Sound Controls */}
-        <div className="flex space-x-4 items-center">
-          <input
-            type="text"
-            value={currentSoundName}
-            onChange={(e) => setCurrentSoundName(e.target.value)}
-            placeholder="Sound name"
-            className="px-4 py-2 border rounded"
-          />
-          <button
-            onClick={playCurrentDrawing}
-            disabled={waveformPoints.length === 0 || isPlaying}
-            className="px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
-          >
-            Play Drawing
-          </button>
-          <button
-            onClick={clearDrawing}
-            className="px-4 py-2 bg-red-500 text-white rounded"
-          >
-            Clear Drawing
-          </button>
-        </div>
-
-        {/* Saved Sounds List */}
-        <div className="grid grid-cols-2 gap-4">
-          {savedSounds.map(sound => (
-            <div key={sound.id} className="p-4 border rounded">
-              <h3 className="font-bold">{sound.name}</h3>
-              <div className="flex space-x-2 mt-2">
-                <button
-                  onClick={() => playSavedSound(sound.id)}
-                  className="px-3 py-1 bg-green-500 text-white rounded"
-                >
-                  Play
-                </button>
-                <button
-                  onClick={() => addToTimeline(sound.id, 0)}
-                  className="px-3 py-1 bg-purple-500 text-white rounded"
-                >
-                  Add to Timeline
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Enhanced Timeline */}
-        <div className="border rounded p-4">
-          <div className="flex justify-between mb-4">
-            <h2 className="text-lg font-bold">Timeline</h2>
-            <button
-              onClick={playTimeline}
-              disabled={isPlaying || timelineEvents.length === 0}
-              className="px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
-            >
-              Play Timeline
-            </button>
-          </div>
-
-          {/* Timeline ruler and playhead */}
-          <div className="h-6 border-b mb-2 relative">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <div
-                key={i}
-                className="absolute border-l h-full text-xs"
-                style={{ left: `${i * PIXELS_PER_SECOND}px` }}
-              >
-                {i}s
-              </div>
-            ))}
-            {/* Playhead */}
-            <div
-              className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
-              style={{
-                left: `${playheadPosition * PIXELS_PER_SECOND}px`,
-                transform: 'translateX(-50%)'
-              }}
-            />
-          </div>
-
-          {/* Timeline tracks */}
-          <div
-            ref={timelineRef}
-            className="relative w-full overflow-x-auto"
-            style={{ minHeight: '200px' }}
-          >
-            {[0, 1, 2].map(track => (
-              <div
-                key={track}
-                className="flex h-16 bg-gray-100 dark:bg-gray-800 rounded-lg mb-2 relative border border-gray-700 transition-all duration-200 hover:border-gray-600 shadow-md"
-                onDragOver={(e) => handleTimelineDragOver(e, track)}
-              >
-                {/* Playhead line */}
-                <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
-                  style={{
-                    left: `${playheadPosition * PIXELS_PER_SECOND}px`,
-                    transform: 'translateX(-50%)'
-                  }}
-                />
-                {timelineEvents
-                  .filter(event => event.track === track)
-                  .map(event => {
-                    const sound = savedSounds.find(s => s.id === event.soundId)
-                    return (
-                      <div
-                        key={event.id}
-                        draggable
-                        onDragStart={() => handleDragStart(event)}
-                        onDragEnd={handleDragEnd}
-                        className={`absolute px-2 py-1 rounded cursor-move transition-all
-                          ${activeEvents.includes(event.id)
-                            ? 'bg-purple-400 dark:bg-purple-500'
-                            : 'bg-purple-200 dark:bg-purple-700'
-                          } hover:bg-purple-300 dark:hover:bg-purple-600`}
-                        style={{
-                          left: `${event.startTime * PIXELS_PER_SECOND}px`,
-                          width: `${event.duration * PIXELS_PER_SECOND}px`,
-                          top: '4px',
-                          bottom: '4px'
-                        }}
-                      >
-                        <div className="text-sm truncate">
-                          {sound?.name}
-                        </div>
-                        {/* Resize handles */}
-                        <div
-                          className="absolute top-0 bottom-0 right-0 w-2 cursor-ew-resize"
-                          onMouseDown={(e) => {
-                            // Add resize logic here
-                          }}
-                        />
-                      </div>
-                    )
-                  })}
-              </div>
-            ))}
-          </div>
-
-          {/* Timeline controls */}
-          <div className="mt-4 flex space-x-4">
-            <button
-              onClick={() => setTimelineEvents([])}
-              className="px-3 py-1 bg-red-500 text-white rounded"
-            >
-              Clear Timeline
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   )
